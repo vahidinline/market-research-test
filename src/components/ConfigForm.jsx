@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Settings,
   Building2,
@@ -8,16 +8,10 @@ import {
   Trash2,
   Sparkles,
 } from 'lucide-react';
+import { deleteProject, listProjects } from '../utils/projects';
+import IndustryExplorer from './IndustryExplorer';
 
-// API config is read from Vite env vars (set in .env locally, Cloudflare Pages env in prod)
-const ENV_CONFIG = {
-  apifyToken: import.meta.env.VITE_APIFY_API_KEY || '',
-  provider: 'gemini',
-  aiConfig: {
-    apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-    model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash',
-  },
-};
+const APIFY_TOKEN = import.meta.env.VITE_APIFY_API_KEY || '';
 
 const defaultCompetitor = () => ({
   name: '',
@@ -30,7 +24,7 @@ const defaultCompetitor = () => ({
 
 const STORAGE_KEY = 'market_research_form';
 
-export default function ConfigForm({ onSubmit, loading }) {
+export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
   const loadSaved = () => {
     try {
       const s = localStorage.getItem(STORAGE_KEY);
@@ -56,14 +50,64 @@ export default function ConfigForm({ onSubmit, loading }) {
   const [competitors, setCompetitors] = useState(
     saved?.competitors || [defaultCompetitor(), defaultCompetitor()],
   );
+  const [discoveredCompetitors, setDiscoveredCompetitors] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [provider, setProvider] = useState(saved?.settings?.provider || 'gemini');
+  const [routerModel, setRouterModel] = useState(saved?.settings?.routerModel === 'auto' ? '' : saved?.settings?.routerModel || '');
+  const [routerModels, setRouterModels] = useState([]);
+  const [routerModelsError, setRouterModelsError] = useState('');
+  const [routerModelsLoading, setRouterModelsLoading] = useState(false);
+  const persistForm = (nextTarget = target, nextCompetitors = competitors, nextProvider = provider, nextRouterModel = routerModel) => {
+    try {
+      const cleanCompetitors = nextCompetitors.map(({ _discoveryKey, ...competitor }) => competitor);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        target: nextTarget,
+        competitors: cleanCompetitors,
+        settings: { provider: nextProvider, routerModel: nextRouterModel },
+      }));
+    } catch {
+      // Ignore browser storage quota/privacy errors.
+    }
+  };
+  useEffect(() => {
+    persistForm();
+  }, [target, competitors, provider, routerModel]);
+  useEffect(() => {
+    const refresh = () => listProjects().then(setProjects);
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+  useEffect(() => {
+    if (provider !== '9router') return;
+    let active = true;
+    setRouterModelsLoading(true); setRouterModelsError('');
+    fetch('/api/ai?action=models', { cache: 'no-store' })
+      .then(async (response) => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`); return body.models || []; })
+      .then((models) => {
+        if (!active) return;
+        const normalized = models.map((item) => typeof item === 'string' ? { id: item } : item).filter((item) => item.id);
+        setRouterModels(normalized);
+        setRouterModel((current) => current && normalized.some((item) => item.id === current) ? current : '');
+      })
+      .catch((error) => { if (active) setRouterModelsError(error.message || 'دریافت مدل‌ها ناموفق بود.'); })
+      .finally(() => { if (active) setRouterModelsLoading(false); });
+    return () => { active = false; };
+  }, [provider]);
+  const removeSavedProject = async (id) => {
+    await deleteProject(id);
+    setProjects((items) => items.filter((project) => project.id !== id));
+    setPendingDelete(null);
+  };
 
   const addCompetitor = () => {
-    if (competitors.length < 3)
+    if (competitors.length < 10)
       setCompetitors([...competitors, defaultCompetitor()]);
   };
 
   const removeCompetitor = (i) => {
-    if (competitors.length > 2)
+    if (competitors.length > 1)
       setCompetitors(competitors.filter((_, idx) => idx !== i));
   };
 
@@ -74,25 +118,26 @@ export default function ConfigForm({ onSubmit, loading }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ target, competitors }),
-      );
-    } catch {
-      // ignore storage errors
-    }
-    onSubmit({ ...ENV_CONFIG, target, competitors, useMockData: false });
+    persistForm();
+    onSubmit({
+      apifyToken: APIFY_TOKEN,
+      provider,
+      aiConfig: provider === 'gemini'
+        ? { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash' }
+        : { model: routerModel.trim() },
+      target, competitors: competitors.map(({ _discoveryKey, ...competitor }) => competitor), useMockData: false,
+    });
   };
 
   const handleDemo = () => {
-    onSubmit({ ...ENV_CONFIG, target, competitors, useMockData: true });
+    onSubmit({ apifyToken: APIFY_TOKEN, provider, aiConfig: {}, target, competitors, useMockData: true });
   };
 
   const isValid =
     target.name.trim() &&
     target.industry.trim() &&
-    competitors.every((c) => c.name.trim());
+    competitors.every((c) => c.name.trim()) &&
+    (provider !== '9router' || Boolean(routerModel.trim()));
 
   return (
     <div
@@ -113,6 +158,27 @@ export default function ConfigForm({ onSubmit, loading }) {
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-6">
+        <section className="projects-panel">
+          <div className="projects-panel-head"><div><span>RESEARCH ARCHIVE</span><h2>پروژه‌های ذخیره‌شده</h2></div><strong>{projects.length}</strong></div>
+          {projects.length ? <div className="projects-list">{projects.map((p)=><article className="project-item" key={p.id}><button type="button" className="project-open" onClick={()=>onLoadProject(p.id)}><span className="project-mark">{(p.name||'پ').slice(0,1)}</span><span><b>{p.name}</b><small>{p.industry||'بدون دسته‌بندی'} · {p.updated_at ? new Date(p.updated_at).toLocaleDateString('fa-IR') : 'تاریخ نامشخص'}</small></span></button>{pendingDelete===p.id?<div className="project-confirm"><span>حذف شود؟</span><button type="button" onClick={()=>removeSavedProject(p.id)}>بله، حذف</button><button type="button" onClick={()=>setPendingDelete(null)}>انصراف</button></div>:<button type="button" className="project-delete" onClick={()=>setPendingDelete(p.id)} aria-label={`حذف ${p.name}`}><Trash2 size={16}/></button>}</article>)}</div>:<div className="projects-empty">هنوز گزارشی ذخیره نشده است. اولین گزارش پس از تولید اینجا نمایش داده می‌شود.</div>}
+        </section>
+        <IndustryExplorer target={target} apiToken={APIFY_TOKEN} provider={provider} aiConfig={provider === 'gemini'
+          ? { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash' }
+          : { model: routerModel.trim() }} selected={discoveredCompetitors} onChange={(items) => {
+          setDiscoveredCompetitors(items);
+          setCompetitors(items.length ? items.map((item) => ({ ...defaultCompetitor(), ...item })) : competitors);
+        }} />
+        <section className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-violet-500/20 rounded-lg"><Settings size={18} className="text-violet-400" /></div>
+            <div><span className="text-white font-semibold">تنظیمات مدل تحلیل</span><p className="text-slate-400 text-xs mt-1">انتخاب برای گزارش بعدی ذخیره می‌شود.</p></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={()=>setProvider('gemini')} className={`rounded-xl border px-4 py-3 text-sm transition-colors ${provider==='gemini'?'border-blue-500 bg-blue-500/15 text-blue-200':'border-slate-600 bg-slate-900/40 text-slate-400'}`}>Google Gemini</button>
+            <button type="button" onClick={()=>setProvider('9router')} className={`rounded-xl border px-4 py-3 text-sm transition-colors ${provider==='9router'?'border-violet-500 bg-violet-500/15 text-violet-200':'border-slate-600 bg-slate-900/40 text-slate-400'}`}>9Router</button>
+          </div>
+          {provider==='9router'&&<div><label className="block text-slate-300 text-sm font-medium mb-2">مدل یا Combo فعال 9Router</label>{routerModelsLoading?<div className="w-full bg-slate-900/60 border border-slate-600 text-slate-400 rounded-xl px-4 py-3 text-sm">در حال دریافت فهرست مدل‌ها…</div>:routerModels.length?<select value={routerModel} onChange={(event)=>setRouterModel(event.target.value)} className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm" dir="ltr"><option value="">مدل یا Combo را انتخاب کنید</option>{routerModels.map((item)=><option key={item.id} value={item.id}>{item.id}{item.owned_by?` · ${item.owned_by}`:''}</option>)}</select>:<input value={routerModel} onChange={(event)=>setRouterModel(event.target.value)} placeholder="مثال: kr/claude-sonnet-4.5 یا نام Combo" className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm" dir="ltr"/>}{routerModelsError&&<p className="text-red-400 text-xs mt-2">{routerModelsError}</p>}<p className="text-slate-500 text-xs mt-2">فقط مدلی را انتخاب کنید که Provider آن در Dashboard خود 9Router متصل است؛ انتخاب مدل `openai/...` بدون credential فعال همین خطا را ایجاد می‌کند.</p><p className="text-slate-500 text-xs mt-1" dir="ltr">Endpoint: https://router.vahidafshari.com/v1</p></div>}
+        </section>
         {/* Target Business */}
         <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-3 mb-2">
@@ -209,10 +275,10 @@ export default function ConfigForm({ onSubmit, loading }) {
               </div>
               <span className="text-white font-semibold">رقبا</span>
               <span className="text-slate-400 text-sm">
-                ({competitors.length}/3)
+                ({competitors.length}/10)
               </span>
             </div>
-            {competitors.length < 3 && (
+            {competitors.length < 10 && (
               <button
                 type="button"
                 onClick={addCompetitor}

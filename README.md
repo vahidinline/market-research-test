@@ -105,8 +105,13 @@ Example configuration:
 
 ```env
 VITE_APIFY_API_KEY=your_apify_token
-VITE_GEMINI_API_KEY=your_gemini_api_key
 VITE_GEMINI_MODEL=gemini-2.0-flash
+
+# Optional Apify Actor IDs for additional public platforms
+VITE_APIFY_TIKTOK_ACTOR=
+VITE_APIFY_YOUTUBE_ACTOR=
+VITE_APIFY_LINKEDIN_ACTOR=
+VITE_APIFY_PINTEREST_ACTOR=
 
 # Demo/client-side gate only — not production authentication
 VITE_AUTH_EMAIL=your-email@example.com
@@ -115,13 +120,29 @@ VITE_AUTH_PASSWORD=change-this-password
 
 Never commit `.env.local` or real credentials to a public repository.
 
+For the optional OpenAI-compatible 9Router provider, keep credentials in the
+Cloudflare Pages Function environment (not in a `VITE_*` variable):
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.0-flash
+NINE_ROUTER_API_KEY=your_9router_api_key
+NINE_ROUTER_BASE_URL=https://router.example.com/v1
+```
+
+For local Pages development, place these values in the git-ignored `.dev.vars`
+file. In production, add `NINE_ROUTER_API_KEY` as an encrypted Pages secret.
+
 ### Run locally
 
 ```bash
 pnpm dev
 ```
 
-Open the local URL shown by Vite, usually `http://localhost:5173`.
+Open `http://localhost:5173`. This command builds the frontend and starts the
+Cloudflare worker routes used by Gemini, 9Router, Apify, projects, and website
+inspection. Use `pnpm dev:frontend` only for frontend-only work that does not
+call these API routes. `pnpm dev:fullstack` remains an alias for `pnpm dev`.
 
 ### Production build
 
@@ -129,6 +150,9 @@ Open the local URL shown by Vite, usually `http://localhost:5173`.
 pnpm build
 pnpm preview
 ```
+
+`pnpm preview` also starts the Cloudflare Worker on port 4173, because a static
+Vite preview cannot serve `/api/ai` or the other server-side routes.
 
 ### Lint
 
@@ -140,7 +164,7 @@ pnpm lint
 
 The application supports two analysis providers:
 
-- Google Gemini, configured through `VITE_GEMINI_API_KEY` and `VITE_GEMINI_MODEL`
+- Google Gemini, proxied through `/api/ai` and configured with the server-side `GEMINI_API_KEY` secret and `VITE_GEMINI_MODEL`
 - OpenRouter, supported by the shared AI utility and provider configuration
 
 The prompt requests a structured JSON response containing the complete research schema. The response parser also handles fenced JSON, surrounding text, and common trailing-comma errors. If an AI response fails, the app retries the AI request using the already-fetched data rather than making another Apify request.
@@ -217,6 +241,20 @@ The project produces a static Vite bundle and can be deployed to any static host
 - Any Nginx or object-storage static host
 
 Set the required environment variables in the hosting provider’s build environment. For production deployments, move API calls and authentication behind a server or edge function so API keys are not exposed in the browser.
+
+### Cloudflare D1 project storage
+
+This repository includes a Pages Function at `functions/api/projects.js`, a D1 migration at `migrations/0001_init.sql`, and `wrangler.jsonc`. The current configuration contains the D1 binding name `DB` and database ID. If you use a different database, replace those values before deploying.
+
+For a CLI-based setup, install Wrangler with `pnpm add -D wrangler`, authenticate with `pnpm exec wrangler login`, and apply the migration with:
+
+```bash
+pnpm exec wrangler d1 migrations apply market-research --remote
+pnpm build
+pnpm exec wrangler pages deploy dist
+```
+
+If the project is connected to Cloudflare Pages through Git, the normal Pages deployment will include the `functions/` directory. In the Pages dashboard, bind the D1 database using the exact binding name `DB`. The React app uses `/api/projects` when the Pages Function is available and falls back to browser storage for local development.
 
 ## Contributing
 

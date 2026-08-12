@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:fullstack"],
+      "port": 5173
+    },
+    {
+      "name": "fullstack-proxy",
+      "runtimeExecutable": "wrangler",
+      "runtimeArgs": ["pages", "dev", "--port", "8788", "--proxy", "5173"],
+      "port": 8788
+    }
+  ]
+}

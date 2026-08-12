@@ -8,11 +8,11 @@ const STEPS = [
     duration: 3000,
   },
   { id: 'analyze', label: 'تحلیل اطلاعات رقبا...', duration: 2000 },
-  { id: 'ai', label: 'ارسال به هوش مصنوعی (OpenRouter)...', duration: 4000 },
+  { id: 'ai', label: 'در حال تحلیل داده‌ها...', duration: 4000 },
   { id: 'generate', label: 'تولید گزارش نهایی...', duration: 2000 },
 ];
 
-export default function LoadingScreen({ currentStep, error, onUseMockData }) {
+export default function LoadingScreen({ currentStep, message, error, onUseMockData }) {
   const [animatedStep, setAnimatedStep] = useState(0);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function LoadingScreen({ currentStep, error, onUseMockData }) {
               در حال ساخت گزارش...
             </h2>
             <p className="text-slate-400 text-center text-sm mb-8">
-              لطفاً صبر کنید. این فرآیند ممکن است چند دقیقه طول بکشد.
+              {message || 'لطفاً صبر کنید. این فرآیند ممکن است چند دقیقه طول بکشد.'}
             </p>
 
             {/* Steps */}

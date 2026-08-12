@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "market-research-dashboard",
+  "pages_build_output_dir": "dist",
+  "compatibility_date": "2026-04-17",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "market-research",
+      "database_id": "86ace372-a03f-4ffa-81e1-30f7a6f1bcc9",
+    },
+  ],
+}
