@@ -41,15 +41,23 @@ async function classifyIndustryResults({ target, result, provider, aiConfig, onP
   try {
     const prompt = 'صنعت هدف: «' + target.industry + '». فهرست کسب‌وکارهای کشف‌شده را بررسی کن. فقط کسب‌وکارهایی را مرتبط بدان که واقعاً محصول یا خدمت آن‌ها در همین صنعت است؛ شباهت مکانی یا کلمه عمومی کافی نیست. خروجی فقط JSON معتبر با ساختار {"items":[{"index":0,"relevant":true,"category":"نام زیرشاخه مناسب"}]} باشد. برای هر index دقیقاً یک مورد بده. کسب‌وکارها: ' + JSON.stringify(businesses.map((item, index) => ({ index, name: item.name, category: item.category, website: item.website })));
     const response = await analyzeWithAI(provider, aiConfig, prompt);
-    const decisions = Array.isArray(response?.items) ? response.items : [];
+    const decisions = Array.isArray(response?.items)
+      ? response.items
+      : Array.isArray(response?.businesses)
+        ? response.businesses
+        : Array.isArray(response?.classifications)
+          ? response.classifications
+          : [];
     const venueWords = /آجیل.?فروشی|مغازه|فروشگاه|سوپرمارکت|رستوران|کافه|پزشک|درمانگاه|مطب|سالن زیبایی|store|shop|restaurant|cafe/i;
-    const accepted = decisions.filter((item) => item.relevant === true && Number.isInteger(Number(item.index)) && clean(item.category) && !venueWords.test(item.category));
+    const isTrue = (value) => value === true || ['true', 'yes', 'بله', 'مرتبط'].includes(String(value).trim().toLowerCase());
+    const accepted = decisions.filter((item) => isTrue(item.relevant ?? item.isRelevant ?? item.related) && Number.isInteger(Number(item.index)) && clean(item.category || item.subcategory || item.segment) && !venueWords.test(item.category || item.subcategory || item.segment));
     if (!accepted.length) {
       result.categories = [];
       result.totalBusinesses = 0;
+      result.intro = 'برای صنعت ' + target.industry + '، داده مرتبط قابل تأیید از نتایج عمومی پیدا نشد. رقبای دستی فرم همچنان قابل استفاده هستند.';
       return;
     }
-    const acceptedByIndex = new Map(accepted.map((item) => [Number(item.index), clean(item.category) || 'سایر کسب‌وکارهای مرتبط']));
+    const acceptedByIndex = new Map(accepted.map((item) => [Number(item.index), clean(item.category || item.subcategory || item.segment) || 'سایر کسب‌وکارهای مرتبط']));
     const filtered = businesses.map((item, index) => ({ item, index })).filter(({ index }) => acceptedByIndex.has(index)).map(({ item, index }) => ({ ...item, category: acceptedByIndex.get(index) }));
     const names = [...new Set(filtered.map((item) => item.category).filter(Boolean))].slice(0, 8);
     result.categories = names.map((name, index) => ({ id: 'category-' + index, name, description: 'کسب‌وکارهای مرتبط با بخش «' + name + '» در صنعت ' + target.industry + '.', businesses: filtered.filter((item) => item.category === name).slice(0, 12) }));

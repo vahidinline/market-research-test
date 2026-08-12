@@ -39,9 +39,27 @@ async function projects(request, env, url) {
   return json({error:'Method not allowed'},405);
 }
 
+const seoAudit = (html, target, response) => {
+  const count = (pattern) => (html.match(pattern) || []).length;
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
+  const description = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)?.[1]?.trim() || '';
+  const canonical = Boolean(html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i));
+  const h1 = count(/<h1\b/gi); const images = count(/<img\b/gi); const imagesWithAlt = count(/<img\b[^>]*\balt=["'][^"']*["']/gi);
+  const viewport = /<meta[^>]+name=["']viewport["']/i.test(html);
+  const lang = /<html[^>]+\blang=["'][^"']+["']/i.test(html);
+  const schema = /application\/ld\+json|itemtype=["']https?:\/\/schema\.org/i.test(html);
+  const robots = /robots\.txt/i.test(html); const sitemap = /sitemap\.xml/i.test(html);
+  const indexable = !/<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*noindex/i.test(html);
+  const internalLinks = count(/<a\b[^>]+href=["'][^"']+["']/gi);
+  const score = (items) => Math.round(items.filter(Boolean).length / items.length * 100);
+  const onPage = score([Boolean(title), Boolean(description), h1 === 1, canonical, images === 0 || imagesWithAlt / images >= .7, internalLinks > 2, schema]);
+  const technical = score([response.ok, target.protocol === 'https:', viewport, lang, indexable, robots, sitemap]);
+  return { onPage, technical, offPage: null, overall: Math.round(onPage * .55 + technical * .45), checks: { title, description, h1, canonical, images, imagesWithAlt, schema, https: target.protocol === 'https:', viewport, lang, indexable, robots, sitemap, status: response.status } };
+};
+
 async function website(request) {
   if (request.method !== 'POST') return json({error:'POST required'},405); const {url}=await request.json();
-  try { const target=new URL(/^https?:/i.test(url)?url:`https://${url}`); const response=await fetch(target,{headers:{'user-agent':'MarketResearchBot/0.0.2'}}); const html=await response.text(); const text=html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); return json({url:target.toString(),status:response.status,title:html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()||'',text:text.slice(0,12000),hasBooking:/رزرو|booking|appointment/i.test(html),hasContact:/contact|تماس/i.test(html),hasBlog:/blog|بلاگ/i.test(html),mobileMeta:/name=["']viewport/i.test(html)}); } catch(error){return json({error:error.message},422)}
+  try { const target=new URL(/^https?:/i.test(url)?url:`https://${url}`); const response=await fetch(target,{headers:{'user-agent':'MarketResearchBot/0.0.2'}}); const html=await response.text(); const text=html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); const seo=seoAudit(html,target,response); return json({url:target.toString(),status:response.status,title:seo.checks.title,text:text.slice(0,12000),hasBooking:/رزرو|booking|appointment/i.test(html),hasContact:/contact|تماس/i.test(html),hasBlog:/blog|بلاگ/i.test(html),mobileMeta:seo.checks.viewport,seo}); } catch(error){return json({error:error.message},422)}
 }
 
 async function ai(request, env) {

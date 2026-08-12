@@ -198,7 +198,7 @@ export async function prepareResearchMethodology(provider, config, target, compe
   const run = createChunkRunner(provider, config, onProgress);
   const allRaw = { target: compactForChunks(profilesData.target), competitors: profilesData.competitors.map(compactForChunks) };
   const overview = await run('تحلیل صنعت، فهرست رقبا و SWOT...', jsonOnly(
-    `صنعت ${target.industry}، جایگاه ${target.name}، دسته‌های اصلی بازار، فهرست رقبا و SWOT برند هدف را تحلیل کن. سهم دسته‌ها جمعاً نزدیک ۱۰۰ باشد.`, allRaw,
+    `صنعت ${target.industry}، جایگاه ${target.name}، دسته‌های اصلی بازار، فهرست رقبا و SWOT برند هدف را تحلیل کن. اگر industryBriefing در داده وجود دارد، آن را به‌عنوان مقدمه کشف اولیه حفظ و با داده‌های گزارش تکمیل کن؛ مقدمه نهایی باید دید کلی صنعت بدهد. سهم دسته‌ها جمعاً نزدیک ۱۰۰ باشد.`, allRaw,
     '{"industryOverview":"...","marketCategories":[{"name":"...","share":0}],"competitorList":[{"name":"...","instagramHandle":"...","website":"...","location":"...","followers":0,"verified":false}],"swot":{"strengths":["..."],"weaknesses":["..."],"opportunities":["..."],"threats":["..."]}}',
   ));
   const competitorAnalysis = [];
@@ -293,7 +293,7 @@ export async function completeResearchWithApprovedCpm(provider, config, target, 
     verified: Boolean(profilesData.competitors.find((business) => business.name === item.name)?.instagramData?.isVerified),
     overallScore: item.overallScore,
   }));
-  return { ...overview, competitorList, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, ...strategy };
+  return { ...overview, industryOverview: target.industryBriefing ? `${target.industryBriefing}\n\nتحلیل تکمیلی بر اساس داده‌های گزارش:\n${overview.industryOverview || ''}` : overview.industryOverview, competitorList, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, ...strategy };
 }
 
 // Compatibility helper for non-interactive callers. The app uses the two-stage

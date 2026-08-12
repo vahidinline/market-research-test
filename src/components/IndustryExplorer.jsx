@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { BrainCircuit, Check, ChevronDown, Loader2, Map, RefreshCw, Users } from 'lucide-react';
 import { discoverIndustry } from '../utils/industry';
 
-export default function IndustryExplorer({ target, apiToken, provider, aiConfig, selected, onChange }) {
+export default function IndustryExplorer({ target, apiToken, provider, aiConfig, selected, onChange, onBriefing, hidden = false }) {
   const [map, setMap] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const run = async () => {
     setBusy(true); setError('');
-    try { setMap(await discoverIndustry({ apiToken, target, provider, aiConfig, onProgress: setMessage })); }
+    try { const nextMap = await discoverIndustry({ apiToken, target, provider, aiConfig, onProgress: setMessage }); setMap(nextMap); onBriefing?.(nextMap.intro); }
     catch (err) { setError(err.message || 'کشف صنعت ناموفق بود.'); }
     finally { setBusy(false); }
   };
@@ -18,7 +18,7 @@ export default function IndustryExplorer({ target, apiToken, provider, aiConfig,
     const exists = selected.some((item) => item._discoveryKey === key);
     onChange(exists ? selected.filter((item) => item._discoveryKey !== key) : [...selected, { ...business, _discoveryKey: key }]);
   };
-  return <section className="industry-explorer">
+  return <section className={`industry-explorer ${hidden ? 'industry-explorer-hidden' : ''}`}>
     <div className="industry-explorer-head"><div className="industry-icon"><BrainCircuit size={20}/></div><div><span className="industry-kicker">INDUSTRY INTELLIGENCE / 01</span><h2>قبل از انتخاب رقبا، نقشه صنعت را ببینید</h2><p>با نام صنعت، سایت و اینستاگرام کسب‌وکار هدف، بخش‌های بازار و بازیگران هر بخش را کشف کنید.</p></div><button type="button" className="discover-button" disabled={busy || !target.industry.trim()} onClick={run}>{busy ? <Loader2 className="spin" size={17}/> : map ? <RefreshCw size={17}/> : <Map size={17}/>} {busy ? 'در حال کشف...' : map ? 'به‌روزرسانی نقشه' : 'کشف صنعت'}</button></div>
     {busy && <div className="industry-progress"><Loader2 className="spin" size={16}/>{message}</div>}
     {error && <div className="industry-error">{error}</div>}

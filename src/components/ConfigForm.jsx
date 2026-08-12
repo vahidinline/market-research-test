@@ -51,6 +51,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     saved?.competitors || [defaultCompetitor(), defaultCompetitor()],
   );
   const [discoveredCompetitors, setDiscoveredCompetitors] = useState([]);
+  const [industryBriefing, setIndustryBriefing] = useState('');
   const [projects, setProjects] = useState([]);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [provider, setProvider] = useState(saved?.settings?.provider || 'gemini');
@@ -58,6 +59,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
   const [routerModels, setRouterModels] = useState([]);
   const [routerModelsError, setRouterModelsError] = useState('');
   const [routerModelsLoading, setRouterModelsLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const persistForm = (nextTarget = target, nextCompetitors = competitors, nextProvider = provider, nextRouterModel = routerModel) => {
     try {
       const cleanCompetitors = nextCompetitors.map(({ _discoveryKey, ...competitor }) => competitor);
@@ -125,7 +127,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
       aiConfig: provider === 'gemini'
         ? { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash' }
         : { model: routerModel.trim() },
-      target, competitors: competitors.map(({ _discoveryKey, ...competitor }) => competitor), useMockData: false,
+      target: { ...target, industryBriefing }, competitors: competitors.map(({ _discoveryKey, ...competitor }) => competitor), useMockData: false,
     });
   };
 
@@ -162,13 +164,13 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           <div className="projects-panel-head"><div><span>RESEARCH ARCHIVE</span><h2>پروژه‌های ذخیره‌شده</h2></div><strong>{projects.length}</strong></div>
           {projects.length ? <div className="projects-list">{projects.map((p)=><article className="project-item" key={p.id}><button type="button" className="project-open" onClick={()=>onLoadProject(p.id)}><span className="project-mark">{(p.name||'پ').slice(0,1)}</span><span><b>{p.name}</b><small>{p.industry||'بدون دسته‌بندی'} · {p.updated_at ? new Date(p.updated_at).toLocaleDateString('fa-IR') : 'تاریخ نامشخص'}</small></span></button>{pendingDelete===p.id?<div className="project-confirm"><span>حذف شود؟</span><button type="button" onClick={()=>removeSavedProject(p.id)}>بله، حذف</button><button type="button" onClick={()=>setPendingDelete(null)}>انصراف</button></div>:<button type="button" className="project-delete" onClick={()=>setPendingDelete(p.id)} aria-label={`حذف ${p.name}`}><Trash2 size={16}/></button>}</article>)}</div>:<div className="projects-empty">هنوز گزارشی ذخیره نشده است. اولین گزارش پس از تولید اینجا نمایش داده می‌شود.</div>}
         </section>
-        <IndustryExplorer target={target} apiToken={APIFY_TOKEN} provider={provider} aiConfig={provider === 'gemini'
+        <IndustryExplorer hidden target={target} apiToken={APIFY_TOKEN} provider={provider} aiConfig={provider === 'gemini'
           ? { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash' }
           : { model: routerModel.trim() }} selected={discoveredCompetitors} onChange={(items) => {
           setDiscoveredCompetitors(items);
           setCompetitors(items.length ? items.map((item) => ({ ...defaultCompetitor(), ...item })) : competitors);
         }} />
-        <section className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
+        <section className="settings-inline-hidden bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-violet-500/20 rounded-lg"><Settings size={18} className="text-violet-400" /></div>
             <div><span className="text-white font-semibold">تنظیمات مدل تحلیل</span><p className="text-slate-400 text-xs mt-1">انتخاب برای گزارش بعدی ذخیره می‌شود.</p></div>
@@ -179,6 +181,8 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           </div>
           {provider==='9router'&&<div><label className="block text-slate-300 text-sm font-medium mb-2">مدل یا Combo فعال 9Router</label>{routerModelsLoading?<div className="w-full bg-slate-900/60 border border-slate-600 text-slate-400 rounded-xl px-4 py-3 text-sm">در حال دریافت فهرست مدل‌ها…</div>:routerModels.length?<select value={routerModel} onChange={(event)=>setRouterModel(event.target.value)} className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm" dir="ltr"><option value="">مدل یا Combo را انتخاب کنید</option>{routerModels.map((item)=><option key={item.id} value={item.id}>{item.id}{item.owned_by?` · ${item.owned_by}`:''}</option>)}</select>:<input value={routerModel} onChange={(event)=>setRouterModel(event.target.value)} placeholder="مثال: kr/claude-sonnet-4.5 یا نام Combo" className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm" dir="ltr"/>}{routerModelsError&&<p className="text-red-400 text-xs mt-2">{routerModelsError}</p>}<p className="text-slate-500 text-xs mt-2">فقط مدلی را انتخاب کنید که Provider آن در Dashboard خود 9Router متصل است؛ انتخاب مدل `openai/...` بدون credential فعال همین خطا را ایجاد می‌کند.</p><p className="text-slate-500 text-xs mt-1" dir="ltr">Endpoint: https://router.vahidafshari.com/v1</p></div>}
         </section>
+        <button type="button" className="settings-trigger" onClick={() => setSettingsOpen(true)}><Settings size={16}/> تنظیمات مدل تحلیل</button>
+        {settingsOpen && <div className="settings-modal-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-modal" onClick={(event) => event.stopPropagation()}><header><h2>تنظیمات مدل تحلیل</h2><button type="button" onClick={() => setSettingsOpen(false)}>×</button></header><p>Provider و مدل برای تحلیل بعدی ذخیره می‌شوند.</p><div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>setProvider('gemini')}>Google Gemini</button><button type="button" onClick={()=>setProvider('9router')}>9Router</button></div>{provider==='9router'&&<input value={routerModel} onChange={(event)=>setRouterModel(event.target.value)} placeholder="نام مدل یا Combo" className="modal-field" dir="ltr"/>}<button type="button" className="modal-done" onClick={() => setSettingsOpen(false)}>تأیید</button></section></div>}
         {/* Target Business */}
         <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-3 mb-2">
@@ -266,6 +270,12 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           </div>
         </div>
 
+        <IndustryExplorer target={target} apiToken={APIFY_TOKEN} provider={provider} aiConfig={provider === 'gemini'
+          ? { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash' }
+          : { model: routerModel.trim() }} selected={discoveredCompetitors} onChange={(items) => {
+          setDiscoveredCompetitors(items);
+          setCompetitors(items.length ? items.map((item) => ({ ...defaultCompetitor(), ...item })) : competitors);
+        }} onBriefing={setIndustryBriefing} />
         {/* Competitors */}
         <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center justify-between mb-2">
