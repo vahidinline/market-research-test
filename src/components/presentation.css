@@ -1,0 +1,54 @@
+.presentation-model-section {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid #354b4e;
+  background: #101d22;
+}
+
+.presentation-provider-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin-bottom: 12px;
+  background: #354b4e;
+}
+
+.presentation-provider-tabs button {
+  padding: 10px;
+  background: #17272c;
+  color: #8fa2a1;
+  font-size: 11px;
+}
+
+.presentation-provider-tabs button.active {
+  background: #b4e65b;
+  color: #0d161b;
+  font-weight: 700;
+}
+
+.presentation-model-section label { margin-top: 0; }
+
+.presentation-model-section select {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 12px 13px;
+  border: 1px solid #3a5153;
+  background: #0d171b;
+  color: #edf3ef;
+  font: 12px 'DM Mono';
+  outline: none;
+  direction: ltr;
+}
+
+.presentation-model-section select:focus { border-color: #b4e65b; }
+
+.presentation-model-section > small {
+  display: block;
+  margin-top: 8px;
+  color: #829799;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.presentation-model-error { color: #f4a194 !important; }

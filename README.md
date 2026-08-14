@@ -105,7 +105,7 @@ Example configuration:
 
 ```env
 VITE_APIFY_API_KEY=your_apify_token
-VITE_GEMINI_MODEL=gemini-2.0-flash
+VITE_GEMINI_MODEL=gemini-3.5-flash-lite
 
 # Optional Apify Actor IDs for additional public platforms
 VITE_APIFY_TIKTOK_ACTOR=
@@ -125,7 +125,7 @@ Cloudflare Pages Function environment (not in a `VITE_*` variable):
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 NINE_ROUTER_API_KEY=your_9router_api_key
 NINE_ROUTER_BASE_URL=https://router.example.com/v1
 ```

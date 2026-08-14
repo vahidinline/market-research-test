@@ -12,7 +12,12 @@ const STEPS = [
   { id: 'generate', label: 'تولید گزارش نهایی...', duration: 2000 },
 ];
 
-export default function LoadingScreen({ currentStep, message, error, onUseMockData }) {
+export default function LoadingScreen({
+  currentStep,
+  message,
+  error,
+  onUseMockData,
+}) {
   const [animatedStep, setAnimatedStep] = useState(0);
 
   useEffect(() => {
@@ -49,13 +54,13 @@ export default function LoadingScreen({ currentStep, message, error, onUseMockDa
             <div className="text-red-400 text-5xl mb-4">⚠️</div>
             <h2 className="text-white text-xl font-bold mb-2">خطا در پردازش</h2>
             <p className="text-red-300 text-sm mb-6 leading-relaxed">{error}</p>
-            <div className="space-y-3">
+            {/* <div className="space-y-3">
               <button
                 onClick={onUseMockData}
                 className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-medium rounded-xl transition-colors">
                 استفاده از داده ساختگی (دمو)
               </button>
-            </div>
+            </div> */}
           </div>
         ) : (
           <>
@@ -63,7 +68,8 @@ export default function LoadingScreen({ currentStep, message, error, onUseMockDa
               در حال ساخت گزارش...
             </h2>
             <p className="text-slate-400 text-center text-sm mb-8">
-              {message || 'لطفاً صبر کنید. این فرآیند ممکن است چند دقیقه طول بکشد.'}
+              {message ||
+                'لطفاً صبر کنید. این فرآیند ممکن است چند دقیقه طول بکشد.'}
             </p>
 
             {/* Steps */}

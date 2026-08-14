@@ -18,7 +18,7 @@ const validateWeights = (items, label, required) => {
   if (Math.abs(weightSum(items) - 1) > 0.001) throw new Error(`مجموع وزن ${label} باید دقیقاً ۱ باشد.`);
 };
 
-export function validateCpmModel(model, { status = model?.status || 'proposed', requireWeights = true } = {}) {
+export function validateCpmModel(model, { status = model?.status || 'proposed', requireWeights = true, requireCandidatePool = true } = {}) {
   if (!model || !Array.isArray(model.factors) || !model.factors.length) throw new Error('مدل CPM فاقد فاکتور است.');
   if (model.framework === 'four_factor_v1') {
     if (model.factors.length !== FIXED_CPM_FACTORS.length) throw new Error('مدل باید دقیقاً چهار فاکتور ثابت داشته باشد.');
@@ -26,7 +26,7 @@ export function validateCpmModel(model, { status = model?.status || 'proposed', 
       const actual = model.factors[index];
       if (actual?.id !== expected.id || actual?.label !== expected.label) throw new Error(`فاکتور ${index + 1} باید «${expected.label}» باشد.`);
     });
-    if (!Array.isArray(model.factorCandidatePool) || model.factorCandidatePool.length < 6) {
+    if (requireCandidatePool && (!Array.isArray(model.factorCandidatePool) || model.factorCandidatePool.length < 6)) {
       throw new Error('مدل باید حداقل ۶ عامل کاندید اثرگذار را برای بررسی اپراتور ارائه کند.');
     }
   }

@@ -32,6 +32,7 @@ export default function App() {
   const [reportTarget, setReportTarget] = useState(null);
   const [isMock, setIsMock] = useState(false);
   const [pendingResearch, setPendingResearch] = useState(null);
+  const [reportAiRuntime, setReportAiRuntime] = useState(null);
   // Keep scraped data for this app session so an AI parse/retry never costs another Apify run.
   const profilesCache = useRef(new Map());
 
@@ -43,7 +44,7 @@ export default function App() {
   };
 
   const handleSubmit = async (formData) => {
-    const { provider, apifyToken, aiConfig, target, competitors, useMockData } =
+    const { provider, apifyToken, aiConfig, target, competitors, industryIntelligence, useMockData } =
       formData;
 
     if (useMockData) {
@@ -52,7 +53,8 @@ export default function App() {
     }
 
     setAppState(STATE.LOADING);
-    setReportTarget(target);
+    setReportAiRuntime({ provider, config: aiConfig });
+    setReportTarget({ ...target, industryIntelligence });
     setLoadingError(null);
     setLoadingStep(0);
 
@@ -147,11 +149,12 @@ export default function App() {
       // Step 2: AI analysis
       setLoadingStep(2);
       setLoadingMessage('مرحله ۵ از ۶: تولید تحلیل عمیق بازار و رقبا...');
+      const enrichedTarget = { ...target, industryIntelligence };
       const preliminary = await prepareResearchMethodology(
-        provider, aiConfig, target, competitors, profilesData,
+        provider, aiConfig, enrichedTarget, competitors, profilesData,
         (message) => setLoadingMessage(`مرحله ۵ از ۶: ${message}`),
       );
-      setPendingResearch({ provider, aiConfig, target, competitors, profilesData, preliminary });
+      setPendingResearch({ provider, aiConfig, target: enrichedTarget, competitors, profilesData, preliminary });
       setAppState(STATE.CPM_APPROVAL);
     } catch (err) {
       console.error(err);
@@ -199,6 +202,7 @@ export default function App() {
     setReportTarget(null);
     setIsMock(false);
     setPendingResearch(null);
+    setReportAiRuntime(null);
   };
 
   const handleLoadProject = async (id) => {
@@ -227,6 +231,7 @@ export default function App() {
         repaired = enforceReportIntegrity(snapshot, { target: enrich(savedTarget), competitors: savedCompetitors.map(enrich) });
       }
       setReportData(repaired); setReportTarget(savedTarget); setIsMock(false); setAppState(STATE.REPORT);
+      setReportAiRuntime(null);
     }
   };
 
@@ -235,7 +240,7 @@ export default function App() {
   ) : appState === STATE.CPM_APPROVAL && pendingResearch ? (
     <CpmApproval model={pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
-    <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} />
+    <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} presentationAi={reportAiRuntime} />
   ) : (
     <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} />
   );

@@ -1,4 +1,5 @@
 const PREFIX = 'mr_raw_cache:';
+const INDUSTRY_PREFIX = 'industry_raw_v1:';
 const DB_NAME = 'market-research-raw-cache';
 const STORE_NAME = 'research';
 const MAX_AGE = 7 * 86400000;
@@ -78,4 +79,29 @@ export async function saveResearchCache(key, payload) {
   } catch (error) { console.error('D1 cache write failed', error); }
   if (!browserSaved && !d1Saved) throw new Error('داده خام Apify نه در مرورگر و نه در D1 ذخیره نشد؛ برای جلوگیری از هزینه مجدد، تحلیل متوقف شد.');
   return { browserSaved, d1Saved };
+}
+
+// Industry discovery uses a separate namespace so its resumable raw payloads
+// never change the existing Instagram profile/post cache contract.
+export async function loadIndustryResearchCache(key) {
+  const namespacedKey = INDUSTRY_PREFIX + key;
+  const payload = await loadResearchCache(namespacedKey);
+  if (payload) return payload;
+  // Explicit local-browser fallback for industry discovery. This is separate
+  // from the existing Instagram cache and survives AI failures/reloads.
+  try {
+    const saved = JSON.parse(localStorage.getItem(namespacedKey) || 'null');
+    if (fresh(saved)) return saved.payload;
+  } catch {}
+  return null;
+}
+
+export async function saveIndustryResearchCache(key, payload) {
+  const namespacedKey = INDUSTRY_PREFIX + key;
+  try {
+    localStorage.setItem(namespacedKey, JSON.stringify({ savedAt: Date.now(), payload }));
+  } catch (error) {
+    console.warn('Industry localStorage cache write skipped:', error);
+  }
+  return saveResearchCache(namespacedKey, payload);
 }

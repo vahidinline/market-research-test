@@ -196,7 +196,7 @@ const createChunkRunner = (provider, config, onProgress) => async (label, prompt
 
 export async function prepareResearchMethodology(provider, config, target, competitors, profilesData, onProgress = () => {}) {
   const run = createChunkRunner(provider, config, onProgress);
-  const allRaw = { target: compactForChunks(profilesData.target), competitors: profilesData.competitors.map(compactForChunks) };
+  const allRaw = { target: { ...compactForChunks(profilesData.target), industryIntelligence: target.industryIntelligence || null }, competitors: profilesData.competitors.map(compactForChunks) };
   const overview = await run('تحلیل صنعت، فهرست رقبا و SWOT...', jsonOnly(
     `صنعت ${target.industry}، جایگاه ${target.name}، دسته‌های اصلی بازار، فهرست رقبا و SWOT برند هدف را تحلیل کن. اگر industryBriefing در داده وجود دارد، آن را به‌عنوان مقدمه کشف اولیه حفظ و با داده‌های گزارش تکمیل کن؛ مقدمه نهایی باید دید کلی صنعت بدهد. سهم دسته‌ها جمعاً نزدیک ۱۰۰ باشد.`, allRaw,
     '{"industryOverview":"...","marketCategories":[{"name":"...","share":0}],"competitorList":[{"name":"...","instagramHandle":"...","website":"...","location":"...","followers":0,"verified":false}],"swot":{"strengths":["..."],"weaknesses":["..."],"opportunities":["..."],"threats":["..."]}}',
@@ -223,24 +223,25 @@ export async function prepareResearchMethodology(provider, config, target, compe
   }
   const synthesisData = { target: compactForChunks(profilesData.target), competitors: competitorAnalysis.map(({ name, strengths, weaknesses, overallScore, services, instagramAnalytics, websiteAnalytics }) => ({ name, strengths, weaknesses, overallScore, services, instagramAnalytics, websiteAnalytics })) };
   const modelPrompt = jsonOnly(
-    `مثل یک کارشناس خبره صنعت، یک مدل CPM سلسله‌مراتبی و قابل دفاع طراحی کن. مدل باید دقیقاً چهار فاکتور زیر را با همین ترتیب، id و label داشته باشد و هیچ فاکتور پنجم یا نام جایگزین نسازد:
-۱) id=social و label=سوشال: همه کانال‌های ورودی اجتماعی مرتبط این پروژه مانند اینستاگرام، لینکدین، پینترست، تیک‌تاک یا سایر کانال‌های واقعاً مرتبط. هر کانال را متغیر وابسته بگیر و معیارهای سنجش آن را متغیر مستقل تعریف کن.
-۲) id=website و label=وب‌سایت: تمام موارد مربوط به وب‌سایت، تجربه کاربری، فنی، محتوا، تبدیل، سئو و قابلیت‌های مرتبط با case.
-۳) id=product_service و label=محصول/خدمت: سبد، کیفیت، عمق، تنوع، تناسب، بسته‌بندی یا ابعاد مرتبط محصول/خدمت.
-۴) id=industry_specific و label=عوامل اثرگذار ویژه صنعت: فقط عوامل مؤثر بر تصمیم مشتری که در سه فاکتور قبل جا نمی‌شوند. این فاکتور نباید محل تکرار سوشال، وب‌سایت یا محصول/خدمت باشد.
-تعداد و نام فاکتورها ثابت است؛ اما متغیرهای وابسته و مستقل هر پروژه را متناسب با صنعت بساز. برای هر فاکتور حداکثر ۴ متغیر وابسته، برای هر متغیر وابسته حداکثر ۵ متغیر مستقل و در کل حداکثر ۳۶ متغیر مستقل مجاز است. برای فاکتورها، متغیرهای وابسته و مستقل وزن پیشنهاد بده و مجموع وزن هر سطح دقیقاً ۱ باشد. وزن‌ها را با تکیه بر رفتار خرید، ریسک ادراک‌شده، اقتصاد صنعت و داده‌های پروژه تعیین کن. decisionBasis باید مشاهده، منبع و اثر آن بر وزن‌دهی را جدا کند.
-برای فاکتور چهارم industryFactorCase مفصل تولید کن: customerDecisionRole، boundaryDefinition، industrySignals با observation/source/implication، customerQuestions، excludedCandidates همراه reason، overlapCheck و dataGaps. علاوه بر مدل اصلی، factorCandidatePool شامل ۸ تا ۱۶ عامل محتمل تصمیم مشتری بساز تا هیچ عامل مؤثری بی‌صدا حذف نشود. حتماً این گزینه‌ها را بررسی کن، حتی اگر نتیجه بررسی عدم ارتباط باشد: تأیید اینفلوئنسر/سلبریتی و اثبات اجتماعی، بسته‌بندی خاص، ارسال رایگان، خرید قسطی، شرایط بازگشت، خدمات جانبی، سفارشی‌سازی، همکاری سازمانی، شعب، مجوز/استاندارد و شفافیت فرایند. هر candidate باید اثر بر تصمیم، سیگنال مشتری، شواهد، محل پیشنهادی میان چهار فاکتور، دلیل طبقه‌بندی، ریسک هم‌پوشانی، پیشنهاد include/exclude و معیار سنجش پیشنهادی داشته باشد. اگر عامل از قبل در مدل آمده، alreadyIncluded=true و existingPath را پر کن و status=included بگذار؛ در غیر این صورت status=review تا اپراتور درباره افزودن یا رد آن تصمیم بگیرد. متغیر ویژه‌ای که با سه فاکتور اول هم‌پوشانی دارد وارد فاکتور چهارم نکن. بازه هر معیار بر اساس ماهیت آن باشد؛ normalization فقط ratio یا min-max. برای rubric حداکثر ۴ سطح کوتاه بساز. متن‌ها فشرده ولی استدلالی باشند.`,
+    `یک مدل CPM فشرده و قابل دفاع بساز. دقیقاً چهار فاکتور ثابت و به‌ترتیب زیر را برگردان: social/سوشال، website/وب‌سایت، product_service/محصول/خدمت و industry_specific/عوامل اثرگذار ویژه صنعت. هر فاکتور دقیقاً ۱ یا ۲ متغیر وابسته و هر متغیر ۱ تا ۳ معیار مستقل داشته باشد. وزن هر سطح دقیقاً جمع ۱ باشد. متن هر تعریف، دلیل و شاهد حداکثر ۱۲ کلمه باشد. عامل ویژه صنعت نباید با سه فاکتور دیگر هم‌پوشانی داشته باشد. برای فاکتور چهارم پرونده‌ای کوتاه با حداقل یک شاهد صنعت و یک سؤال مشتری بساز. عامل کاندید نساز؛ در درخواست بعدی جداگانه ساخته می‌شود.`,
     { industry: target.industry, target: synthesisData.target, competitors: synthesisData.competitors },
-    '{"cpmModel":{"version":1,"framework":"four_factor_v1","status":"proposed","rationale":"...","decisionBasis":[{"observation":"...","source":"...","implication":"..."}],"assumptions":["..."],"factorCandidatePool":[{"id":"free_shipping","label":"ارسال رایگان","customerDecisionImpact":"...","customerSignal":"...","evidence":["..."],"suggestedFactorId":"industry_specific","suggestedDependentLabel":"تسهیل خرید","classificationReason":"...","overlapRisk":"...","recommendation":"include|exclude","alreadyIncluded":false,"existingPath":"","status":"review|included","selectedFactorId":"industry_specific","proposedCriterion":{"definition":"...","reason":"...","evidenceSource":"...","scoring":{"type":"binary|range|count|percentage|rubric","min":0,"max":1,"normalization":"min-max","rubricLevels":[]}}}],"factors":[{"id":"social","label":"سوشال","weight":0.25,"dependentVariables":[{"id":"social_channel","label":"کانال اجتماعی","weight":1,"independentVariables":[{"id":"social_metric","label":"معیار کانال","weight":1,"evidenceSource":"...","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"website","label":"وب‌سایت","weight":0.25,"dependentVariables":[{"id":"website_dimension","label":"بعد وب‌سایت","weight":1,"independentVariables":[{"id":"website_metric","label":"معیار وب‌سایت","weight":1,"evidenceSource":"website_data","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"product_service","label":"محصول/خدمت","weight":0.25,"dependentVariables":[{"id":"offer_dimension","label":"بعد محصول یا خدمت","weight":1,"independentVariables":[{"id":"offer_metric","label":"معیار محصول یا خدمت","weight":1,"evidenceSource":"competitor_analysis","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"industry_specific","label":"عوامل اثرگذار ویژه صنعت","weight":0.25,"industryFactorCase":{"customerDecisionRole":"...","boundaryDefinition":"...","industrySignals":[{"observation":"...","source":"...","implication":"..."}],"customerQuestions":["..."],"excludedCandidates":[{"name":"...","reason":"..."}],"overlapCheck":["..."],"dataGaps":["..."]},"dependentVariables":[{"id":"industry_dimension","label":"عامل ویژه صنعت","weight":1,"independentVariables":[{"id":"industry_metric","label":"معیار ویژه صنعت","weight":1,"evidenceSource":"industry_inference","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]}]}}',
+    '{"cpmModel":{"version":1,"framework":"four_factor_v1","status":"proposed","rationale":"...","decisionBasis":[{"observation":"...","source":"...","implication":"..."}],"assumptions":["..."],"factors":[{"id":"social","label":"سوشال","weight":0.25,"definition":"...","dependentVariables":[{"id":"social_channel","label":"...","weight":1,"independentVariables":[{"id":"social_metric","label":"...","weight":1,"evidenceSource":"...","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"website","label":"وب‌سایت","weight":0.25,"definition":"...","dependentVariables":[{"id":"website_dimension","label":"...","weight":1,"independentVariables":[{"id":"website_metric","label":"...","weight":1,"evidenceSource":"...","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"product_service","label":"محصول/خدمت","weight":0.25,"definition":"...","dependentVariables":[{"id":"offer_dimension","label":"...","weight":1,"independentVariables":[{"id":"offer_metric","label":"...","weight":1,"evidenceSource":"...","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]},{"id":"industry_specific","label":"عوامل اثرگذار ویژه صنعت","weight":0.25,"definition":"...","industryFactorCase":{"customerDecisionRole":"...","boundaryDefinition":"...","industrySignals":[{"observation":"...","source":"...","implication":"..."}],"customerQuestions":["..."],"excludedCandidates":[],"overlapCheck":["..."],"dataGaps":["..."]},"dependentVariables":[{"id":"industry_dimension","label":"...","weight":1,"independentVariables":[{"id":"industry_metric","label":"...","weight":1,"evidenceSource":"...","scoring":{"type":"range","min":0,"max":3,"normalization":"min-max","rubricLevels":[]}}]}]}]}}',
   );
   let modelResult = await run('طراحی مدل ثابت CPM برای این پروژه...', modelPrompt);
   let cpmModel;
   try {
-    cpmModel = validateCpmModel(modelResult.cpmModel || modelResult, { status: 'proposed', requireWeights: true });
+    cpmModel = validateCpmModel(modelResult.cpmModel || modelResult, { status: 'proposed', requireWeights: true, requireCandidatePool: false });
   } catch (modelError) {
-    modelResult = await run('اصلاح ساختار مدل CPM...', `${modelPrompt}\nمدل قبلی رد شد: ${modelError.message} دقیقاً چهار فاکتور ثابت، وزن‌ها، متغیرها و پرونده توجیه فاکتور چهارم را کامل کن.`);
-    cpmModel = validateCpmModel(modelResult.cpmModel || modelResult, { status: 'proposed', requireWeights: true });
+    modelResult = await run('اصلاح ساختار مدل CPM...', `${modelPrompt}\nمدل قبلی رد شد: ${modelError.message} فقط JSON کوتاه، دقیقاً چهار فاکتور و وزن‌های معتبر برگردان.`);
+    cpmModel = validateCpmModel(modelResult.cpmModel || modelResult, { status: 'proposed', requireWeights: true, requireCandidatePool: false });
   }
+  const candidateResult = await run('ساخت عوامل کاندید CPM برای تأیید اپراتور...', jsonOnly(
+    `دقیقاً ۶ عامل تصمیم مشتری برای صنعت ${target.industry} بساز که در مدل CPM فعلی نیازمند تأیید اپراتور هستند. متن هر فیلد حداکثر ۱۰ کلمه و evidence حداکثر یک مورد باشد. عامل تکراری نساز. selectedFactorId باید یکی از چهار id ثابت باشد.`,
+    { industry: target.industry, model: cpmModel, target: synthesisData.target, competitors: synthesisData.competitors },
+    '{"factorCandidatePool":[{"id":"...","label":"...","customerDecisionImpact":"...","customerSignal":"...","evidence":["..."],"suggestedFactorId":"social|website|product_service|industry_specific","suggestedDependentLabel":"...","classificationReason":"...","overlapRisk":"...","recommendation":"include|exclude","alreadyIncluded":false,"existingPath":"","status":"review","selectedFactorId":"social|website|product_service|industry_specific","proposedCriterion":{"definition":"...","reason":"...","evidenceSource":"...","scoring":{"type":"binary","min":0,"max":1,"normalization":"min-max","rubricLevels":[]}}}]}',
+  ));
+  cpmModel.factorCandidatePool = Array.isArray(candidateResult.factorCandidatePool) ? candidateResult.factorCandidatePool : [];
+  cpmModel = validateCpmModel(cpmModel, { status: 'proposed', requireWeights: true, requireCandidatePool: true });
   return { overview, competitorAnalysis, synthesisData, cpmModel };
 }
 
@@ -344,14 +345,19 @@ async function requestAiProxy(payload) {
     });
   } catch (error) {
     throw new Error(
-      `ارتباط با سرویس AI برقرار نشد. Worker پروژه فعال نیست یا اتصال شبکه قطع شده است. پروژه را با "pnpm dev" اجرا کنید. (${error.message})`,
+      `ارتباط هنگام دریافت پاسخ AI قطع شد. ممکن است مدل شلوغ، پاسخ کند یا درخواست بیش از حد سنگین باشد. مدل دیگری انتخاب کنید و دوباره تلاش کنید. (${error.message})`,
     );
   }
 
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.toLowerCase().includes('application/json')) {
+    const responseText = await res.text().catch(() => '');
+    const isCloudflareTimeout = res.status === 524 || /error\s*(code\s*)?524|A timeout occurred/i.test(responseText);
+    if (isCloudflareTimeout) {
+      throw new Error('سرویس AI بیشتر از مهلت Cloudflare منتظر پاسخ مدل مانده است (خطای 524). یک مدل سریع‌تر انتخاب کنید یا دوباره تلاش کنید.');
+    }
     throw new Error(
-      `مسیر /api/ai به Worker متصل نیست (HTTP ${res.status}). سرور Vite ایستا را ببندید و پروژه را با "pnpm dev" اجرا کنید.`,
+      `سرویس /api/ai پاسخ غیرمنتظره برگرداند (HTTP ${res.status}).`,
     );
   }
 
@@ -362,16 +368,37 @@ async function requestAiProxy(payload) {
   return { res, data };
 }
 
+export async function testAiConnection(provider, config = {}) {
+  if (provider === '9router') {
+    if (!config.model) throw new Error('ابتدا یک مدل یا Combo از 9Router انتخاب کنید.');
+    const { res, data } = await requestAiProxy({
+      provider: '9router',
+      model: config.model,
+      prompt: 'فقط این کلمه را به صورت JSON معتبر برگردان: {"status":"ok"}',
+    });
+    if (!res.ok) throw new Error(data?.error?.message || data?.error || `خطای 9Router: ${res.status}`);
+    return { ok: true, provider, model: config.model };
+  }
+  const { res, data } = await requestAiProxy({
+    provider: 'gemini',
+    model: config.model,
+    apiKey: config.apiKey,
+    prompt: 'فقط این کلمه را به صورت JSON معتبر برگردان: {"status":"ok"}',
+  });
+  if (!res.ok) throw new Error(data?.error?.message || data?.error || `خطای Gemini: ${res.status}`);
+  return { ok: true, provider: 'gemini', model: config.model };
+}
+
 /**
  * Call Google Gemini API directly
  * @param {string} apiKey  - VITE_GEMINI_API_KEY
  * @param {string} prompt
- * @param {string} model   - e.g. "gemini-2.0-flash"
+ * @param {string} model   - e.g. "gemini-3.5-flash-lite"
  */
 export async function analyzeWithGemini(
   apiKey,
   prompt,
-  model = 'gemini-2.0-flash',
+  model = 'gemini-3.5-flash-lite'
 ) {
   const { res, data } = await requestAiProxy({ provider: 'gemini', model, prompt, apiKey });
 
@@ -460,7 +487,10 @@ export async function analyzeWithOpenRouter(
 
 export async function analyzeWith9Router(prompt, model) {
   const { res, data } = await requestAiProxy({ provider: '9router', model, prompt });
-  if (!res.ok) throw new Error(data.error?.message || data.error || `خطای 9Router: ${res.status}`);
+  if (!res.ok) {
+    const details = [data.stage && `مرحله: ${data.stage}`, data.requestId && `شناسه: ${data.requestId}`, data.upstreamStatus && `upstream: ${data.upstreamStatus}`].filter(Boolean).join(' · ');
+    throw new Error(`${data.error?.message || data.error || `خطای 9Router: ${res.status}`}${details ? ` (${details})` : ''}`);
+  }
   const rawContent = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text ?? data.output_text ?? data.content ?? '';
   const content = Array.isArray(rawContent)
     ? rawContent.map((part) => typeof part === 'string' ? part : part?.text || part?.content || '').join('')
@@ -501,4 +531,113 @@ export async function analyzeWithAI(provider, config, prompt) {
     config.model,
     config.endpoint,
   );
+}
+
+const presentationText = (value, limit = 1800) => String(value || '').trim().slice(0, limit);
+const compactIndustryIntelligence = (intel = {}) => ({
+  intro: presentationText(intel.intro, 2200),
+  industryDefinition: presentationText(intel.industryDefinition, 1400),
+  subindustries: (intel.subindustries || []).slice(0, 8).map((item) => ({
+    name: presentationText(item.name, 160), description: presentationText(item.description, 650),
+  })),
+  targetPlacement: intel.targetPlacement ? {
+    subindustry: presentationText(intel.targetPlacement.subindustry, 200),
+    businessModel: presentationText(intel.targetPlacement.businessModel, 200),
+    reason: presentationText(intel.targetPlacement.reason, 1200),
+  } : null,
+  targetSubindustryBrief: intel.targetSubindustryBrief ? {
+    name: presentationText(intel.targetSubindustryBrief.name, 200),
+    overview: presentationText(intel.targetSubindustryBrief.overview, 2200),
+    businessModels: (intel.targetSubindustryBrief.businessModels || []).slice(0, 7).map((model) => ({
+      name: presentationText(model.name, 180), description: presentationText(model.description, 650),
+      exampleCount: model.exampleCount, evidenceStatus: model.evidenceStatus,
+    })),
+  } : null,
+});
+
+const presentationReportSnapshot = (data = {}, target = {}) => ({
+  target: {
+    name: target.name,
+    industry: target.industry,
+    location: target.location,
+    marketResearchMode: target.marketResearchMode,
+    industryIntelligence: compactIndustryIntelligence(target.industryIntelligence),
+  },
+  industryOverview: presentationText(data.industryOverview, 2800),
+  marketCategories: (data.marketCategories || []).slice(0, 10),
+  competitorList: (data.competitorList || []).slice(0, 12),
+  competitorAnalysis: (data.competitorAnalysis || []).slice(0, 12).map((item) => ({
+    name: item.name,
+    location: item.location,
+    bio: presentationText(item.bio, 700),
+    services: (item.services || []).slice(0, 8).map((value) => presentationText(value, 180)),
+    strengths: (item.strengths || []).slice(0, 5).map((value) => presentationText(value, 220)),
+    weaknesses: (item.weaknesses || []).slice(0, 5).map((value) => presentationText(value, 220)),
+    followers: item.followers ?? item.instagramAnalytics?.followers,
+    engagementRate: item.engagementRate ?? item.instagramAnalytics?.engagementRate,
+    overallScore: item.overallScore,
+    website: item.website,
+    instagramHandle: item.instagramHandle,
+  })),
+  swot: data.swot,
+  cpmModel: data.cpmModel ? {
+    rationale: data.cpmModel.rationale,
+    factors: data.cpmModel.factors?.map((factor) => ({ id: factor.id, label: factor.label, weight: factor.weight })),
+  } : null,
+  cpmRows: data.cpmMatrix?.rows?.map((row) => ({
+    name: row.name,
+    isTarget: row.isTarget,
+    total: row.total,
+    factorScores: Object.fromEntries(Object.entries(row.factorScores || {}).map(([id, result]) => [id, { score: result?.score }])),
+  })),
+  recommendations: (data.recommendations || []).slice(0, 7).map((item) => ({
+    priority: item.priority, title: presentationText(item.title, 180),
+    description: presentationText(item.description, 700),
+    actionSteps: (item.actionSteps || []).slice(0, 4).map((value) => presentationText(value, 260)),
+  })),
+});
+
+export async function generatePresentationPlan(provider, config, data, target, options = {}) {
+  const requestedSlides = Math.max(10, Math.min(22, Number(options.slideCount) || 16));
+  const prompt = `شما مدیر ارشد استراتژی و طراح روایت ارائه هستید. از گزارش تحقیق بازار زیر یک پرزنتیشن مدیریتی حرفه‌ای به زبان فارسی بسازید.
+
+مخاطب: ${options.audience || 'مدیران و تصمیم‌گیرندگان کسب‌وکار'}
+هدف ارائه: ${options.purpose || 'تصمیم‌گیری درباره جایگاه رقابتی و اولویت‌های رشد'}
+تعداد هدف: ${requestedSlides} اسلاید
+
+قواعد قطعی:
+- فقط از داده گزارش استفاده کنید و هیچ عدد، برند، منبع یا ادعایی اختراع نکنید.
+- هر اسلاید فقط یک پیام اصلی داشته باشد و عنوان آن نتیجه‌محور باشد.
+- متن روی اسلاید کوتاه باشد؛ توضیح کامل در speakerNotes قرار گیرد.
+- روایت از زمینه و مسئله به شواهد، پیامد و اقدام برسد.
+- اسلاید اول cover و اسلاید آخر closing باشد.
+- layout فقط یکی از این مقادیر باشد: cover, statement, bullets, segments, competitors, swot, cpm, recommendations, closing.
+- bullets حداکثر 5 مورد و هر مورد حداکثر 16 کلمه باشد.
+- sources فقط URLهایی باشد که عیناً در گزارش وجود دارند. اگر منبع URL ندارید آرایه خالی بدهید.
+
+فقط JSON معتبر با این ساختار برگردانید:
+{"deckTitle":"...","deckSubtitle":"...","slides":[{"layout":"cover","title":"...","subtitle":"...","claim":"...","bullets":["..."],"items":[{"label":"...","value":"...","detail":"..."}],"speakerNotes":"...","sources":["https://..."]}]}
+
+گزارش:
+${JSON.stringify(presentationReportSnapshot(data, target))}`;
+  const result = await analyzeWithAI(provider, config, prompt);
+  const slides = Array.isArray(result?.slides) ? result.slides.slice(0, 22) : [];
+  if (slides.length < 3) throw new Error('مدل ساختار کافی برای پرزنتیشن تولید نکرد. دوباره تلاش کنید.');
+  const allowed = new Set(['cover', 'statement', 'bullets', 'segments', 'competitors', 'swot', 'cpm', 'recommendations', 'closing']);
+  return {
+    deckTitle: String(result.deckTitle || `تحقیق بازار ${target?.name || ''}`).trim(),
+    deckSubtitle: String(result.deckSubtitle || target?.industry || '').trim(),
+    slides: slides.map((slide, index) => ({
+      layout: allowed.has(slide.layout) ? slide.layout : index === 0 ? 'cover' : 'bullets',
+      title: String(slide.title || '').trim(),
+      subtitle: String(slide.subtitle || '').trim(),
+      claim: String(slide.claim || '').trim(),
+      bullets: (Array.isArray(slide.bullets) ? slide.bullets : []).slice(0, 5).map(String),
+      items: (Array.isArray(slide.items) ? slide.items : []).slice(0, 8).map((item) => ({
+        label: String(item?.label || '').trim(), value: String(item?.value || '').trim(), detail: String(item?.detail || '').trim(),
+      })),
+      speakerNotes: String(slide.speakerNotes || '').trim(),
+      sources: (Array.isArray(slide.sources) ? slide.sources : []).filter((source) => /^https?:\/\//i.test(source)).slice(0, 12),
+    })),
+  };
 }
