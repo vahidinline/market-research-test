@@ -24,6 +24,10 @@ function WeightSummary({ items, label }) {
   return <span className={valid ? 'cpm-ok' : 'cpm-error'}>{label}: {percent(total)} {valid ? '✓' : '— باید ۱۰۰٪ باشد'}</span>;
 }
 
+function MainFactorWeights({ factors, onChange }) {
+  return <section className="cpm-main-weights"><div className="cpm-main-weights-copy"><span>STEP 02 · WEIGHTED FRAMEWORK</span><h2>وزن‌دهی چهار شاخص اصلی</h2><p>اهمیت نسبی هر فاکتور را برای این پروژه تعیین کنید. مجموع وزن‌ها باید دقیقاً ۱۰۰٪ باشد.</p></div><div className="cpm-main-weight-grid">{factors.map((factor, index) => <article key={factor.id} className={`cpm-main-weight-card factor-${index}`}><div className="cpm-main-weight-head"><span>{String(index + 1).padStart(2, '0')}</span><b>{factor.label}</b><strong>{Math.round((Number(factor.weight) || 0) * 100)}٪</strong></div><div className="cpm-main-weight-track"><i style={{ width: `${Math.max(0, Math.min(100, (Number(factor.weight) || 0) * 100))}%` }}/></div><label>وزن فاکتور<input type="number" min="0" max="1" step="0.01" value={factor.weight} onChange={(event) => onChange((next) => { next.factors[index].weight = Number(event.target.value); })}/></label><small>{factor.definition || 'تعریف فاکتور هنوز تکمیل نشده است.'}</small></article>)}</div></section>;
+}
+
 export default function CpmApproval({ model, target, onApprove, onCancel }) {
   const [draft, setDraft] = useState(() => {
     const initial = clone(model);
@@ -128,6 +132,8 @@ export default function CpmApproval({ model, target, onApprove, onCancel }) {
       <button onClick={() => change((next) => equalize(next.factors))}>توزیع مساوی وزن فاکتورها</button>
       <span className="cpm-fixed-note"><LockKeyhole size={13}/> نام و تعداد فاکتورها ثابت است</span>
     </section>
+
+    <MainFactorWeights factors={draft.factors} onChange={change}/>
 
     <CandidatePool model={draft} onDecision={decideCandidate} onUpdate={updateCandidate}/>
 

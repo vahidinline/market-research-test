@@ -82,7 +82,7 @@ export const MOCK_ANALYSIS = {
         'نرخ تعامل پایین‌تر نسبت به اندازه',
         'قیمت‌گذاری بالاتر از میانگین بازار',
       ],
-      overallScore: 7,
+      overallScore: 70,
       services: ['رختخواب', 'دکور', 'اسباب‌بازی', 'نورپردازی'],
       marketingActions: [
         'همکاری با اینفلوئنسرهای مادر',
@@ -135,7 +135,7 @@ export const MOCK_ANALYSIS = {
         'پوشش محدود در بازار',
         'محتوای کمتر نسبت به رقبا',
       ],
-      overallScore: 6,
+      overallScore: 60,
       services: ['رختخواب', 'دکور', 'لوازم ذخیره‌سازی'],
       marketingActions: ['تمرکز بر کیفیت محصول', 'محتوای UGC از مشتریان'],
       instagramAnalytics: {

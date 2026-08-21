@@ -6,11 +6,12 @@ import { validateCpmModel } from './cpm.js';
 // ─── Prompt builder (shared) ─────────────────────────────────────────────────
 
 export function buildAnalysisPrompt(targetBusiness, competitors, profilesData) {
+  const outputLanguage = targetBusiness.outputLanguage === 'en' ? 'English' : 'Persian';
   const compactPost = (post = {}) => ({ ownerUsername: post.ownerUsername || post.username || '', type: post.type || post.mediaType || (post.isVideo ? 'Video' : 'Image'), timestamp: post.timestamp || post.takenAt || '', caption: String(post.caption || post.text || '').slice(0, 700), likes: post.likesCount ?? post.likes ?? 0, comments: post.commentsCount ?? post.comments ?? 0, views: post.videoViewCount ?? post.videoPlayCount ?? post.views ?? 0, url: post.url || (post.shortCode ? `https://instagram.com/p/${post.shortCode}` : '') });
   const compactBusiness = (business = {}) => ({ name: business.name, industry: business.industry, instagramHandle: business.instagramHandle, website: business.website, instagramData: business.instagramData, instagramSummary: business.instagramSummary, instagramPosts: (business.instagramPosts || []).slice(0, 20).map(compactPost), websiteData: business.websiteData ? { ...business.websiteData, text: String(business.websiteData.text || '').slice(0, 5000) } : null });
   const dataJson = JSON.stringify({ target: compactBusiness(profilesData.target), competitors: (profilesData.competitors || []).map(compactBusiness) });
 
-  return `شما یک تحلیلگر بازار حرفه‌ای و مشاور ارشد استراتژی برند هستید. بر اساس داده‌های خام جمع‌آوری‌شده زیر، یک گزارش تحقیق بازار جامع، عمیق و کاملاً تخصصی به زبان فارسی تهیه کنید. گزارش نهایی باید از نظر کیفیت، دایره لغات تخصصی، عمق تحلیلی و ساختار متنی دقیقاً مشابه گزارش‌های تحقیق بازار دستی و حرفه‌ای تهیه شده توسط آژانس‌های مارکتینگ طراز اول کشور باشد و حس یک مطالعه کامل ۱۲۷ صفحه‌ای را القا کند.
+  return `You are a senior market research strategist. Produce the complete report in ${outputLanguage}. Every qualitative field, label, recommendation, explanation, and user-facing text must be written in ${outputLanguage}; do not mix languages. Based on the raw data below, create a deep, professional market research report.
 
 **کسب‌وکار هدف:** ${targetBusiness.name} (صنعت: ${targetBusiness.industry})
 **اینستاگرام:** @${targetBusiness.instagramHandle}
@@ -164,11 +165,13 @@ ${dataJson}
 3. در competitorAnalysis اطلاعات فالوور، تعداد پست‌ها، قدیمی‌ترین و جدیدترین پست نمونه‌برداری‌شده را به صورت واقعی از داده‌های خام JSON اسکرپ‌شده استخراج کنید و هرگز حدس نزنید.
 4. positioningMaps تولید نکنید؛ اپلیکیشن نقشه‌ها را مستقیماً از CPM تأییدشده محاسبه می‌کند.
 5. دقیقاً ۵ توصیه استراتژیک بسیار کاربردی و تخصصی در بخش recommendations به ترتیب اولویت (priority از ۱ تا ۵) ارائه دهید که هر کدام شامل ۲ تا ۴ گام اجرایی کاملاً مشخص در بخش actionSteps باشد.
-6. تمام تحلیل‌های کیفی و توضیحات را به زبان فارسی سلیس، با دایره لغات تخصصی مارکتینگ بنویسید و لحنی شبیه به یک مشاور ارشد و تحلیلگر برجسته داشته باشید.`;
+6. تمام تحلیل‌های کیفی و توضیحات را فقط به زبان ${outputLanguage}، با دایره لغات تخصصی مارکتینگ بنویسید و هیچ زبان دیگری را وارد خروجی نکنید.`;
 }
 
 const compactForChunks = (business = {}) => ({
   name: business.name, industry: business.industry, instagramHandle: business.instagramHandle, website: business.website,
+  linkedin: business.linkedin || '', tiktok: business.tiktok || '', pinterest: business.pinterest || '',
+  twitter: business.twitter || business.x || '', telegram: business.telegram || '',
   instagramData: business.instagramData, instagramSummary: business.instagramSummary,
   instagramPosts: (business.instagramPosts || []).slice(0, 12).map((post) => ({
     type: post.type || post.mediaType, timestamp: post.timestamp || post.takenAt,
@@ -177,9 +180,31 @@ const compactForChunks = (business = {}) => ({
     url: post.url || (post.shortCode ? `https://instagram.com/p/${post.shortCode}` : ''),
   })),
   websiteData: business.websiteData ? { ...business.websiteData, text: String(business.websiteData.text || '').slice(0, 2500) } : null,
+  platformData: business.platformData || null,
 });
 
-const jsonOnly = (task, data, schema) => `شما تحلیلگر ارشد بازار هستید. فقط JSON معتبر و کامل برگردانید. متن‌ها فارسی، دقیق و فشرده باشند. هیچ markdown یا متن بیرون JSON ننویسید.\n\nوظیفه:\n${task}\n\nداده:\n${JSON.stringify(data)}\n\nساختار دقیق خروجی:\n${schema}`;
+const jsonOnly = (task, data, schema, language = null) => {
+  const requested = language || data?.target?.outputLanguage || data?.business?.outputLanguage || 'fa';
+  return `You are a senior market analyst. Return valid JSON only. Write every textual value in ${requested === 'en' ? 'English' : 'Persian'}, with no mixed-language prose.\n\nTask:\n${task}\n\nData:\n${JSON.stringify(data)}\n\nExact output structure:\n${schema}`;
+};
+
+const SOCIAL_DEPENDENTS = [
+  { id: 'social_content_quality', label: 'کیفیت محتوا', weight: 0.3, criteria: [['visual_quality', 'کیفیت محتوای بصری'], ['written_quality', 'کیفیت محتوای نوشتاری']] },
+  { id: 'social_page_standards', label: 'استانداردهای صفحه', weight: 0.25, criteria: [['profile_standards', 'استانداردهای پروفایل و صفحه'], ['channel_structure', 'ساختار و یکپارچگی کانال']] },
+  { id: 'social_content_strategy', label: 'استراتژی محتوا', weight: 0.2, criteria: [['content_pillars', 'ستون‌ها و تنوع محتوا'], ['audience_fit', 'تناسب محتوا با مخاطب و سفر مشتری']] },
+  { id: 'social_performance_trust', label: 'عملکرد، تعامل و اعتماد', weight: 0.25, criteria: [['engagement_performance', 'تعامل و عملکرد کانال'], ['trust_credibility', 'اعتماد و اعتبار برند']] },
+];
+function ensureSocialFactor(model) {
+  const social = model.factors.find((factor) => factor.id === 'social');
+  if (!social) return model;
+  social.definition = 'ارزیابی چندبعدی کیفیت و اثربخشی حضور برند در کانال‌های اجتماعی منتخب.';
+  social.dependentVariables = SOCIAL_DEPENDENTS.map((dependent) => ({
+    id: dependent.id, label: dependent.label, weight: dependent.weight,
+    reason: 'شاخص ثابت ارزیابی Social در پروژه',
+    independentVariables: dependent.criteria.map(([id, label]) => ({ id, label, definition: `سنجش ${label} در کانال‌های اجتماعی منتخب`, weight: 0.5, reason: 'معیار قابل مشاهده و قابل استناد', evidenceSource: 'social_channel_audit', scoring: { type: 'range', min: 0, max: 3, normalization: 'min-max', rubricLevels: [] } })),
+  }));
+  return model;
+}
 
 const createChunkRunner = (provider, config, onProgress) => async (label, prompt) => {
   onProgress(label);
@@ -201,22 +226,19 @@ export async function prepareResearchMethodology(provider, config, target, compe
     `صنعت ${target.industry}، جایگاه ${target.name}، دسته‌های اصلی بازار، فهرست رقبا و SWOT برند هدف را تحلیل کن. اگر industryBriefing در داده وجود دارد، آن را به‌عنوان مقدمه کشف اولیه حفظ و با داده‌های گزارش تکمیل کن؛ مقدمه نهایی باید دید کلی صنعت بدهد. سهم دسته‌ها جمعاً نزدیک ۱۰۰ باشد.`, allRaw,
     '{"industryOverview":"...","marketCategories":[{"name":"...","share":0}],"competitorList":[{"name":"...","instagramHandle":"...","website":"...","location":"...","followers":0,"verified":false}],"swot":{"strengths":["..."],"weaknesses":["..."],"opportunities":["..."],"threats":["..."]}}',
   ));
-  const competitorAnalysis = [];
-  for (let index = 0; index < profilesData.competitors.length; index += 1) {
-    const business = profilesData.competitors[index];
-    const item = await run(`تحلیل رقیب ${index + 1} از ${profilesData.competitors.length}: ${business.name}...`, jsonOnly(
-      'این رقیب را بر اساس نمونه داده‌شده تحلیل کن. آمار را حدس نزن. تحلیل محتوایی و وب‌سایت فشرده ولی کاربردی باشد.', compactForChunks(business),
+  const analyzeBusinessProfile = async (business, label, role) => {
+    const item = await run(label, jsonOnly(
+      `این ${role === 'target' ? 'کسب‌وکار هدف' : 'رقیب'} را بر اساس نمونه داده‌شده تحلیل کن. آمار را حدس نزن. نقاط قوت و ضعف را فقط به وب‌سایت و سوشال محدود نکن؛ محصول و خدمت، تنوع و تمایز، اعتبار و اعتماد، تناسب با نیاز صنعت و فرصت‌های تجاری را نیز پوشش بده. تحلیل محتوایی و وب‌سایت فشرده ولی کاربردی باشد. نقش آن را با رقبا اشتباه نگیر. برای هر کانال اجتماعی موجود، socialAudit را با پنج بُعد کیفیت محتوا، استانداردهای صفحه، استراتژی محتوا، عملکرد و تعامل، اعتماد و اعتبار ارزیابی کن؛ هر بُعد score از ۰ تا ۱۰۰، status و evidence کوتاه داشته باشد. کانال فاقد داده را not_available ثبت کن.`, compactForChunks(business),
       '{"competitor":{"name":"...","instagramHandle":"...","website":"...","location":"...","bio":"...","services":["..."],"marketingActions":["..."],"strengths":["..."],"weaknesses":["..."],"overallScore":0,"instagramAnalytics":{"firstPost":null,"firstPostStatus":"not_collected","oldestSampledPost":null,"lastPost":null,"postsAnalyzed":0,"totalPosts":0,"followers":0,"engagementRate":null,"mediaDistribution":{"photos":0,"videos":0,"carousels":0},"contentAnalysis":{"visualQuality":"...","creativity":"...","scriptTopic":"...","captions":"...","storytelling":"...","bio":"...","highlights":"...","layout":"..."},"bestContent":{"title":"...","link":"..."}},"websiteAnalytics":{"uxScore":0,"mobileFriendly":null,"seoStatus":"...","onlineBooking":null,"liveSupport":null,"narrative":"..."}}}',
     ));
     const generated = item.competitor || item;
-    competitorAnalysis.push({
-      ...generated,
-      // Identity always comes from the form. The model must not rename, merge,
-      // or omit a competitor when several brands have similar profiles.
-      name: business.name,
-      instagramHandle: business.instagramHandle,
-      website: business.website,
-    });
+    return { ...generated, name: business.name, instagramHandle: business.instagramHandle, website: business.website, isTarget: role === 'target' };
+  };
+  const targetAnalysis = await analyzeBusinessProfile(profilesData.target, `تحلیل کسب‌وکار هدف: ${profilesData.target.name}...`, 'target');
+  const competitorAnalysis = [];
+  for (let index = 0; index < profilesData.competitors.length; index += 1) {
+    const business = profilesData.competitors[index];
+    competitorAnalysis.push(await analyzeBusinessProfile(business, `تحلیل رقیب ${index + 1} از ${profilesData.competitors.length}: ${business.name}...`, 'competitor'));
   }
   if (competitorAnalysis.length !== competitors.length) {
     throw new Error(`گزارش رقبا ناقص است: ${competitorAnalysis.length} از ${competitors.length} رقیب تحلیل شد.`);
@@ -235,6 +257,7 @@ export async function prepareResearchMethodology(provider, config, target, compe
     modelResult = await run('اصلاح ساختار مدل CPM...', `${modelPrompt}\nمدل قبلی رد شد: ${modelError.message} فقط JSON کوتاه، دقیقاً چهار فاکتور و وزن‌های معتبر برگردان.`);
     cpmModel = validateCpmModel(modelResult.cpmModel || modelResult, { status: 'proposed', requireWeights: true, requireCandidatePool: false });
   }
+  cpmModel = ensureSocialFactor(cpmModel);
   const candidateResult = await run('ساخت عوامل کاندید CPM برای تأیید اپراتور...', jsonOnly(
     `دقیقاً ۶ عامل تصمیم مشتری برای صنعت ${target.industry} بساز که در مدل CPM فعلی نیازمند تأیید اپراتور هستند. متن هر فیلد حداکثر ۱۰ کلمه و evidence حداکثر یک مورد باشد. عامل تکراری نساز. selectedFactorId باید یکی از چهار id ثابت باشد.`,
     { industry: target.industry, model: cpmModel, target: synthesisData.target, competitors: synthesisData.competitors },
@@ -242,14 +265,14 @@ export async function prepareResearchMethodology(provider, config, target, compe
   ));
   cpmModel.factorCandidatePool = Array.isArray(candidateResult.factorCandidatePool) ? candidateResult.factorCandidatePool : [];
   cpmModel = validateCpmModel(cpmModel, { status: 'proposed', requireWeights: true, requireCandidatePool: true });
-  return { overview, competitorAnalysis, synthesisData, cpmModel };
+  return { overview, targetAnalysis, competitorAnalysis, synthesisData, cpmModel };
 }
 
 export async function completeResearchWithApprovedCpm(provider, config, target, competitors, profilesData, preliminary, cpmModel, onProgress = () => {}) {
   if (cpmModel?.status !== 'locked') throw new Error('مدل CPM هنوز توسط اپراتور تأیید و قفل نشده است.');
   validateCpmModel(cpmModel, { status: 'locked', requireWeights: true });
   const run = createChunkRunner(provider, config, onProgress);
-  const { overview, competitorAnalysis, synthesisData } = preliminary;
+  const { overview, targetAnalysis, competitorAnalysis, synthesisData } = preliminary;
   const evaluationSchema = (model) => JSON.stringify({
     evaluation: {
       factorScores: Object.fromEntries((model.factors || []).map((factor) => [
@@ -294,7 +317,7 @@ export async function completeResearchWithApprovedCpm(provider, config, target, 
     verified: Boolean(profilesData.competitors.find((business) => business.name === item.name)?.instagramData?.isVerified),
     overallScore: item.overallScore,
   }));
-  return { ...overview, industryOverview: target.industryBriefing ? `${target.industryBriefing}\n\nتحلیل تکمیلی بر اساس داده‌های گزارش:\n${overview.industryOverview || ''}` : overview.industryOverview, competitorList, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, ...strategy };
+  return { ...overview, industryOverview: target.industryBriefing ? `${target.industryBriefing}\n\nتحلیل تکمیلی بر اساس داده‌های گزارش:\n${overview.industryOverview || ''}` : overview.industryOverview, competitorList, targetAnalysis, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, ...strategy };
 }
 
 // Compatibility helper for non-interactive callers. The app uses the two-stage

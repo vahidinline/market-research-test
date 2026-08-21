@@ -9,10 +9,18 @@ import {
   Sparkles,
   Download,
   Upload,
+  MapPin,
 } from 'lucide-react';
-import { deleteProject, downloadProjectTransfer, importProjectTransfer, listProjects, loadProject } from '../utils/projects';
+import {
+  deleteProject,
+  downloadProjectTransfer,
+  importProjectTransfer,
+  listProjects,
+  loadProject,
+} from '../utils/projects';
 import IndustryExplorer from './IndustryExplorer';
 import { testAiConnection } from '../utils/ai';
+import { useLanguage } from '../i18n.jsx';
 
 const APIFY_TOKEN = import.meta.env.VITE_APIFY_API_KEY || '';
 
@@ -23,11 +31,29 @@ const defaultCompetitor = () => ({
   linkedin: '',
   tiktok: '',
   pinterest: '',
+  twitter: '',
+  telegram: '',
 });
 
 const STORAGE_KEY = 'market_research_form';
+const DEFAULT_TARGET = {
+  name: '',
+  industry: '',
+  category: '',
+  location: '',
+  audienceLanguage: 'fa',
+  marketResearchMode: 'hybrid',
+  instagramHandle: '',
+  website: '',
+  linkedin: '',
+  tiktok: '',
+  pinterest: '',
+  twitter: '',
+  telegram: '',
+};
 
 export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
+  const { language, setLanguage, t, dir } = useLanguage();
   const loadSaved = () => {
     try {
       const s = localStorage.getItem(STORAGE_KEY);
@@ -39,17 +65,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
 
   const saved = loadSaved();
 
-  const [target, setTarget] = useState(
-    saved?.target || {
-      name: '',
-      industry: '',
-      instagramHandle: '',
-      website: '',
-      linkedin: '',
-      tiktok: '',
-      pinterest: '',
-    },
-  );
+  const [target, setTarget] = useState({
+    ...DEFAULT_TARGET,
+    ...(saved?.target || {}),
+  });
   const [competitors, setCompetitors] = useState(
     saved?.competitors || [defaultCompetitor(), defaultCompetitor()],
   );
@@ -166,10 +185,14 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     setTransferBusy(true);
     try {
       const project = projects[0] ? await loadProject(projects[0].id) : null;
-      const fullProject = project ? { ...projects[0], snapshot: project } : null;
+      const fullProject = project
+        ? { ...projects[0], snapshot: project }
+        : null;
       if (!fullProject) throw new Error('گزارشی برای خروجی‌گرفتن وجود ندارد.');
       downloadProjectTransfer(fullProject);
-      setTransferMessage('فایل انتقال آخرین گزارش دانلود شد. آن را در تنظیمات محیط پروداکشن وارد کنید.');
+      setTransferMessage(
+        'فایل انتقال آخرین گزارش دانلود شد. آن را در تنظیمات محیط پروداکشن وارد کنید.',
+      );
     } catch (error) {
       setTransferError(error.message || 'خروجی گرفتن از گزارش ناموفق بود.');
     } finally {
@@ -186,7 +209,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     setTransferBusy(true);
     try {
       const imported = await importProjectTransfer(file);
-      setProjects((items) => [imported, ...items.filter((item) => item.id !== imported.id)]);
+      setProjects((items) => [
+        imported,
+        ...items.filter((item) => item.id !== imported.id),
+      ]);
       setTransferMessage(`«${imported.name}» وارد و در فضای فعلی ذخیره شد.`);
     } catch (error) {
       setTransferError(error.message || 'واردکردن گزارش ناموفق بود.');
@@ -224,7 +250,12 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
             }
           : { model: routerModel.trim() },
-      target: { ...target, industryBriefing, industryIntelligence },
+      target: {
+        ...target,
+        industryBriefing,
+        industryIntelligence,
+        outputLanguage: language,
+      },
       competitors: competitors.map(
         ({ _discoveryKey, ...competitor }) => competitor,
       ),
@@ -277,18 +308,37 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
   return (
     <div
       className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-8"
-      dir="rtl">
+      dir={dir}>
+      <div className="max-w-3xl mx-auto flex justify-end mb-5">
+        <div
+          className="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900/70 p-1 text-xs"
+          aria-label={t.language}>
+          <span className="px-2 text-slate-400">{t.language}</span>
+          <button
+            type="button"
+            onClick={() => setLanguage('fa')}
+            className={`rounded-lg px-3 py-2 ${language === 'fa' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300'}`}>
+            {t.persian}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLanguage('en')}
+            className={`rounded-lg px-3 py-2 ${language === 'en' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300'}`}>
+            {t.english}
+          </button>
+        </div>
+      </div>
       {/* Header */}
       <div className="max-w-3xl mx-auto mb-8 text-center">
         <div className="inline-flex items-center gap-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl px-6 py-3 mb-4">
           <Sparkles className="text-blue-400" size={20} />
-          <span className="text-blue-300 font-medium text-sm">نسخه 0.0.3</span>
+          <span className="text-blue-300 font-medium text-sm">نسخه 0.1.1</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold text-white mb-3">
-          گزارش‌ساز تحقیق بازار
+          {t.form.title}
         </h1>
         <p className="text-slate-400 text-lg">
-          داشبورد جامع تحلیل بازار و کانال‌های دیجیتال
+          {t.form.subtitle}
         </p>
       </div>
 
@@ -297,7 +347,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           <div className="projects-panel-head">
             <div>
               <span>RESEARCH ARCHIVE</span>
-              <h2>پروژه‌های ذخیره‌شده</h2>
+              <h2>{t.form.archive}</h2>
             </div>
             <strong>{projects.length}</strong>
           </div>
@@ -553,7 +603,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
               <section className="project-transfer" aria-label="انتقال گزارش">
                 <div>
                   <span>انتقال گزارش</span>
-                  <p>برای جابه‌جایی گزارش میان لوکال و پروداکشن؛ کلیدها و تنظیمات مدل منتقل نمی‌شوند.</p>
+                  <p>
+                    برای جابه‌جایی گزارش میان لوکال و پروداکشن؛ کلیدها و تنظیمات
+                    مدل منتقل نمی‌شوند.
+                  </p>
                 </div>
                 <div className="project-transfer-actions">
                   <button
@@ -577,8 +630,16 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   />
                 </div>
                 {transferBusy && <small>در حال آماده‌سازی انتقال…</small>}
-                {transferMessage && <small className="project-transfer-success">✓ {transferMessage}</small>}
-                {transferError && <small className="settings-model-error">✕ {transferError}</small>}
+                {transferMessage && (
+                  <small className="project-transfer-success">
+                    ✓ {transferMessage}
+                  </small>
+                )}
+                {transferError && (
+                  <small className="settings-model-error">
+                    ✕ {transferError}
+                  </small>
+                )}
               </section>
               <button
                 type="button"
@@ -595,22 +656,24 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
             <div className="p-2 bg-blue-500/20 rounded-lg">
               <Building2 size={18} className="text-blue-400" />
             </div>
-            <span className="text-white font-semibold">کسب‌وکار هدف</span>
+            <span className="text-white font-semibold">{t.form.target}</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {['linkedin', 'tiktok', 'pinterest'].map((channel) => (
-              <input
-                key={channel}
-                type="url"
-                value={target[channel]}
-                onChange={(e) =>
-                  setTarget({ ...target, [channel]: e.target.value })
-                }
-                placeholder={`${channel === 'linkedin' ? 'LinkedIn Business' : channel === 'tiktok' ? 'TikTok Business' : 'Pinterest Business'} URL`}
-                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm"
-                dir="ltr"
-              />
-            ))}
+            {['linkedin', 'tiktok', 'pinterest', 'twitter', 'telegram'].map(
+              (channel) => (
+                <input
+                  key={channel}
+                  type="url"
+                  value={target[channel]}
+                  onChange={(e) =>
+                    setTarget({ ...target, [channel]: e.target.value })
+                  }
+                  placeholder={`${channel === 'linkedin' ? 'LinkedIn Business' : channel === 'tiktok' ? 'TikTok Business' : channel === 'pinterest' ? 'Pinterest Business' : channel === 'twitter' ? 'Twitter / X' : 'Telegram'} URL`}
+                  className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm"
+                  dir="ltr"
+                />
+              ),
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -641,6 +704,91 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 placeholder-slate-500 transition-colors"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                دسته فعالیت پیشنهادی (توسط مدل)
+              </label>
+              <input
+                type="text"
+                value={target.category}
+                readOnly
+                placeholder="پس از پیش‌تحلیل مدل نمایش داده می‌شود"
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 placeholder-slate-500 transition-colors"
+              />
+              <p className="text-slate-500 text-xs mt-2">
+                اختیاری؛ فقط بر اساس شواهد Instagram یا Telegram وارد کنید.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                <MapPin size={14} className="inline ml-1 text-amber-400" />
+                حوزه جغرافیایی بررسی{' '}
+                <span className="text-slate-500">(اختیاری)</span>
+              </label>
+              <input
+                type="text"
+                value={target.location}
+                onChange={(e) =>
+                  setTarget({ ...target, location: e.target.value })
+                }
+                placeholder="مثال: ایران، تهران یا منطقه خاورمیانه"
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 placeholder-slate-500 transition-colors"
+              />
+              <p className="text-slate-500 text-xs mt-2">
+                در صورت خالی بودن، جست‌وجو بدون محدودیت جغرافیایی انجام می‌شود.
+              </p>
+            </div>
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                زبان مخاطب <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={target.audienceLanguage || 'fa'}
+                onChange={(e) =>
+                  setTarget({ ...target, audienceLanguage: e.target.value })
+                }
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                required>
+                <option value="fa">فارسی — فارسی‌زبانان سراسر دنیا</option>
+                <option value="en">انگلیسی — انگلیسی‌زبانان سراسر دنیا</option>
+                <option value="ar">عربی — عربی‌زبانان سراسر دنیا</option>
+                <option value="tr">ترکی — ترکی‌زبانان سراسر دنیا</option>
+                <option value="de">آلمانی — آلمانی‌زبانان سراسر دنیا</option>
+                <option value="fr">فرانسوی — فرانسوی‌زبانان سراسر دنیا</option>
+                <option value="multi">چندزبانه / بین‌المللی</option>
+                <option value="any">بدون محدودیت زبانی</option>
+              </select>
+              <p className="text-slate-500 text-xs mt-2">
+                زبان مخاطب مستقل از لوکیشن است؛ مثلاً فارسی‌زبانان مقیم کانادا و
+                آلمان هم پوشش داده می‌شوند.
+              </p>
+            </div>
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                دامنه بررسی بازار <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={target.marketResearchMode}
+                onChange={(e) =>
+                  setTarget({ ...target, marketResearchMode: e.target.value })
+                }
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                required>
+                <option value="online">
+                  آنلاین — وب‌سایت و شبکه‌های اجتماعی
+                </option>
+                <option value="offline">
+                  آفلاین — فروشگاه‌ها و بازار محلی
+                </option>
+                <option value="hybrid">ترکیبی — آنلاین و آفلاین</option>
+              </select>
+              <p className="text-slate-500 text-xs mt-2">
+                این انتخاب مستقیماً queryهای Maps و Instagram را تغییر می‌دهد.
+              </p>
             </div>
           </div>
 
@@ -713,6 +861,9 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           }}
           onBriefing={setIndustryBriefing}
           onIntelligence={setIndustryIntelligence}
+          onCategory={(category) =>
+            setTarget((current) => ({ ...current, category }))
+          }
         />
         {/* Competitors */}
         <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-5 space-y-4">
@@ -721,7 +872,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
               <div className="p-2 bg-rose-500/20 rounded-lg">
                 <Settings size={18} className="text-rose-400" />
               </div>
-              <span className="text-white font-semibold">رقبا</span>
+              <span className="text-white font-semibold">{t.form.competitors}</span>
               <span className="text-slate-400 text-sm">
                 ({competitors.length}/10)
               </span>
@@ -732,7 +883,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 onClick={addCompetitor}
                 className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg">
                 <Plus size={15} />
-                افزودن رقیب
+                {t.form.addCompetitor}
               </button>
             )}
           </div>
@@ -821,6 +972,26 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                     updateCompetitor(index, 'pinterest', e.target.value)
                   }
                   placeholder="Pinterest Business URL"
+                  className="w-full bg-slate-800/60 border border-slate-600/60 text-white rounded-lg px-3 py-2.5 text-sm"
+                  dir="ltr"
+                />
+                <input
+                  type="url"
+                  value={comp.twitter}
+                  onChange={(e) =>
+                    updateCompetitor(index, 'twitter', e.target.value)
+                  }
+                  placeholder="Twitter / X URL"
+                  className="w-full bg-slate-800/60 border border-slate-600/60 text-white rounded-lg px-3 py-2.5 text-sm"
+                  dir="ltr"
+                />
+                <input
+                  type="url"
+                  value={comp.telegram}
+                  onChange={(e) =>
+                    updateCompetitor(index, 'telegram', e.target.value)
+                  }
+                  placeholder="Telegram URL"
                   className="w-full bg-slate-800/60 border border-slate-600/60 text-white rounded-lg px-3 py-2.5 text-sm"
                   dir="ltr"
                 />

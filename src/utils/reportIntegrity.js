@@ -17,7 +17,7 @@ const average = (group) => {
 export function enforceReportIntegrity(analysis, profilesData) {
   const result = structuredClone(analysis || {});
   const businesses = [profilesData.target, ...(profilesData.competitors || [])];
-  result.competitorAnalysis = (result.competitorAnalysis || []).map((competitor) => {
+  const enrichAnalysis = (competitor) => {
     const business = businesses.find((item) => sameBusiness(competitor, item));
     if (!business) return competitor;
     const profile = business.instagramData;
@@ -69,7 +69,9 @@ export function enforceReportIntegrity(analysis, profilesData) {
         },
       },
     };
-  });
+  };
+  result.targetAnalysis = result.targetAnalysis ? enrichAnalysis({ ...result.targetAnalysis, isTarget: true }) : null;
+  result.competitorAnalysis = (result.competitorAnalysis || []).map(enrichAnalysis);
   // Directory is derived from the canonical detailed analyses. AI-generated
   // summary lists frequently omit brands when the input contains many rivals.
   result.competitorList = result.competitorAnalysis.map((detail) => ({

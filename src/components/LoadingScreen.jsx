@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, CheckCircle2, Circle } from 'lucide-react';
+import { useLanguage } from '../i18n.jsx';
 
 const STEPS = [
   {
@@ -16,8 +17,9 @@ export default function LoadingScreen({
   currentStep,
   message,
   error,
-  onUseMockData,
+  onUseMockData, language = 'fa',
 }) {
+  const { t } = useLanguage();
   const [animatedStep, setAnimatedStep] = useState(0);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function LoadingScreen({
   return (
     <div
       className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-8"
-      dir="rtl">
+      dir={language === 'fa' ? 'rtl' : 'ltr'}>
       <div className="max-w-md w-full">
         {/* Spinner */}
         {!error && (
@@ -52,7 +54,7 @@ export default function LoadingScreen({
         {error ? (
           <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-red-400 text-5xl mb-4">⚠️</div>
-            <h2 className="text-white text-xl font-bold mb-2">خطا در پردازش</h2>
+            <h2 className="text-white text-xl font-bold mb-2">{t.loading.error}</h2>
             <p className="text-red-300 text-sm mb-6 leading-relaxed">{error}</p>
             {/* <div className="space-y-3">
               <button
@@ -65,11 +67,11 @@ export default function LoadingScreen({
         ) : (
           <>
             <h2 className="text-white text-2xl font-bold text-center mb-2">
-              در حال ساخت گزارش...
+              {t.loading.title}
             </h2>
             <p className="text-slate-400 text-center text-sm mb-8">
               {message ||
-                'لطفاً صبر کنید. این فرآیند ممکن است چند دقیقه طول بکشد.'}
+                t.loading.wait}
             </p>
 
             {/* Steps */}

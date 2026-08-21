@@ -4,7 +4,8 @@ import { loadIndustryResearchCache, saveIndustryResearchCache } from './research
 import { inspectWebsite } from './website';
 
 const clean = (value) => String(value || '').trim();
-const PIPELINE_VERSION = 'v7-instagram-account-resolution';
+const PIPELINE_VERSION = 'v12-model-assignment-validation';
+const INSTAGRAM_COLLECTION_VERSION = 'v4-target-profile-required';
 
 export async function discoverIndustry({ apiToken, target, aiConfig = {}, provider = 'gemini', onProgress = () => {}, forceRefresh = false, reviewBriefing = '' }) {
   const { cacheKey, result } = await loadRawIndustryData({ apiToken, target, onProgress, forceRefresh });
@@ -15,6 +16,13 @@ export async function discoverIndustry({ apiToken, target, aiConfig = {}, provid
   try {
     const normalized = await runCachedStage(cacheKey, result, 'normalizedBusinesses', () => result.businesses, 'نرمال‌سازی و حذف کسب‌وکارهای تکراری...');
     result.businesses = normalized;
+    if (!result.businesses.length) {
+      result.categories = [];
+      result.totalBusinesses = 0;
+      result.intro = `برای صنعت ${target.industry}، به‌جز کسب‌وکار هدف، داده معتبر و مستقلی برای شناسایی رقیب پیدا نشد. از معرفی کسب‌وکار هدف به‌عنوان رقیب خودداری شد.`;
+      result.intelligenceStatus = 'complete';
+      return result;
+    }
     const sourceEvidence = await runSourceEvidenceStage({ cacheKey, result, onProgress, forceRefresh });
     const targetSourceEvidence = await runTargetSourceEvidenceStage({ cacheKey, result, target, onProgress, forceRefresh });
     const evidence = await runEvidenceStage({ cacheKey, result, target, provider, aiConfig, onProgress, sourceEvidence });
@@ -34,31 +42,46 @@ export async function discoverIndustry({ apiToken, target, aiConfig = {}, provid
 }
 
 export async function prepareIndustryReview({ apiToken, target, aiConfig = {}, provider = 'gemini', onProgress = () => {}, forceRefresh = false }) {
-  const { result } = await loadRawIndustryData({ apiToken, target, onProgress, forceRefresh });
-  onProgress('ساخت پیش‌تحلیل از داده‌های خام برای تأیید شما...');
-  const response = await analyzeWithAI(provider, aiConfig, rawReviewPrompt(target, result.businesses));
+  // Category discovery must never inherit a previously suggested category or
+  // infer the target from noisy competitor candidates.
+  const discoveryTarget = { ...target, category: '' };
+  const { result } = await loadRawIndustryData({ apiToken, target: discoveryTarget, onProgress, forceRefresh });
+  const targetProfile = findTargetInstagramProfile(result.rawCache?.instagram || [], target);
+  onProgress('استخراج دسته فعالیت فقط از شواهد کسب‌وکار هدف...');
+  const categoryResponse = await analyzeWithAI(provider, aiConfig, targetCategoryPrompt(target, targetProfile));
+  const category = clean(categoryResponse?.category) || clean(target.industry);
+  const categoryConfidence = categoryResponse?.categoryConfidence || (targetProfile ? 'medium' : 'low');
+  const categoryEvidence = (Array.isArray(categoryResponse?.categoryEvidence) ? categoryResponse.categoryEvidence : [])
+    .map((item) => clean(typeof item === 'string' ? item : item?.text))
+    .filter(Boolean)
+    .slice(0, 3);
+  onProgress('ساخت پیش‌تحلیل متمرکز برای تأیید شما...');
+  const response = await analyzeWithAI(provider, aiConfig, targetFocusedReviewPrompt(target, category, targetProfile));
   const briefing = clean(response?.briefing || response?.analysis || response?.overview);
   if (!briefing) throw new Error('پیش‌تحلیل صنعت تولید نشد. لطفاً دوباره تلاش کنید.');
-  return { briefing, totalBusinesses: result.businesses.length };
+  return { briefing, category, categoryConfidence, categoryEvidence, totalBusinesses: result.businesses.length };
 }
 
 async function loadRawIndustryData({ apiToken, target, onProgress = () => {}, forceRefresh = false }) {
   const cacheKey = industryCacheKey(target);
   const cached = await loadIndustryResearchCache(cacheKey);
-  const query = `${target.industry} ${target.location || ''}`.trim();
+  const query = `${target.industry} ${target.audienceLanguage && target.audienceLanguage !== 'any' ? audienceLanguageLabel(target.audienceLanguage) : ''} ${target.location || ''}`.trim();
   const collectionPlan = marketCollectionPlan(target);
   const scopedQueries = collectionPlan.queries;
-  let maps = forceRefresh ? null : cached?.maps;
+  // Do not let a historical empty response permanently lock this research.
+  let maps = forceRefresh || (Array.isArray(cached?.maps) && cached.maps.length === 0) ? null : cached?.maps;
   if (!Array.isArray(maps)) {
     onProgress('پیدا کردن کسب‌وکارهای این صنعت در Google Maps...');
     maps = await runApifyActor(apiToken, 'compass~google-maps-extractor', {
       searchStringsArray: scopedQueries,
       maxCrawledPlacesPerSearch: 40,
-      language: 'fa',
+      language: target.audienceLanguage === 'en' || isGlobalLocation(target.location) ? 'en' : 'fa',
     });
     await saveIndustryResearchCache(cacheKey, { ...(cached || {}), maps, instagram: cached?.instagram || [], modelSearches: cached?.modelSearches || {} });
   } else onProgress('داده خام Google Maps از کش قابل ادامه بارگذاری شد...');
   let instagram = [];
+  let instagramStatus = cached?.instagramStatus || 'not_started';
+  let targetInstagramStatus = cached?.targetInstagramStatus || 'not_started';
   if (!collectionPlan.collectInstagram) {
     onProgress('حالت آفلاین انتخاب شده؛ گردآوری Instagram انجام نمی‌شود.');
   } else {
@@ -66,21 +89,57 @@ async function loadRawIndustryData({ apiToken, target, onProgress = () => {}, fo
     instagram = forceRefresh ? null : cached?.instagram;
     if (!Array.isArray(instagram)) instagram = [];
   }
-  if (collectionPlan.collectInstagram && (!cached || !Array.isArray(cached.instagram))) {
+  const hasUsableInstagramCache = !forceRefresh
+    && Array.isArray(cached?.instagram)
+    && cached.instagramCollectionVersion === INSTAGRAM_COLLECTION_VERSION
+    && cached.instagramStatus === 'succeeded'
+    && (!target.instagramHandle || cached.targetInstagramStatus === 'succeeded');
+  if (collectionPlan.collectInstagram && !hasUsableInstagramCache) {
     try {
+      const businessQueries = [...maps]
+        .map((item) => clean(item.title || item.name || item.businessName || item.placeName))
+        .filter(Boolean)
+        .filter((name, index, names) => names.indexOf(name) === index)
+        .slice(0, 30);
+      const instagramQueries = [query, ...businessQueries]
+        .filter(Boolean)
+        .join(', ');
       instagram = await runApifyActor(apiToken, 'apify~instagram-search-scraper', {
-        search: query,
+        search: instagramQueries,
         searchType: 'user',
-        resultsLimit: 40,
+        searchLimit: 5,
       });
+      instagramStatus = 'succeeded';
     } catch (error) {
       console.warn('Instagram industry discovery skipped:', error);
+      instagram = [];
+      instagramStatus = 'failed';
+      onProgress(`جست‌وجوی Instagram ناموفق بود و در اجرای بعدی دوباره تلاش می‌شود: ${error.message}`);
     }
-    await saveIndustryResearchCache(cacheKey, { ...(cached || {}), maps, instagram, modelSearches: cached?.modelSearches || {} });
+    // The target account must not depend on Google Maps discovery. This is
+    // especially important for global/online businesses without a local venue.
+    if (target.instagramHandle) {
+      try {
+        const targetProfiles = await runApifyActor(apiToken, 'apify~instagram-profile-scraper', {
+          usernames: [normalizeInstagramHandle(target.instagramHandle)],
+        });
+        instagram = [...instagram, ...targetProfiles.map((profile) => ({
+          ...profile,
+          username: profile.username || target.instagramHandle,
+          fullName: profile.fullName || target.name,
+          biography: profile.biography || profile.bio || '',
+        }))];
+        targetInstagramStatus = targetProfiles.length ? 'succeeded' : 'not_found';
+      } catch (error) {
+        console.warn('Target Instagram profile collection skipped:', error);
+        targetInstagramStatus = 'failed';
+      }
+    }
+    await saveIndustryResearchCache(cacheKey, { ...(cached || {}), maps, instagram, instagramStatus, targetInstagramStatus, instagramCollectionVersion: INSTAGRAM_COLLECTION_VERSION, modelSearches: cached?.modelSearches || {} });
   } else if (collectionPlan.collectInstagram) onProgress('داده خام Instagram از کش قابل ادامه بارگذاری شد...');
   const result = buildIndustryMap(target, maps, instagram);
   result.rawCacheKey = cacheKey;
-  result.rawCache = { maps, instagram, modelSearches: cached?.modelSearches || {} };
+  result.rawCache = { maps, instagram, instagramStatus, targetInstagramStatus, instagramCollectionVersion: INSTAGRAM_COLLECTION_VERSION, modelSearches: cached?.modelSearches || {} };
   result.pipeline = !forceRefresh && cached?.pipelineVersion === PIPELINE_VERSION ? (cached?.pipeline || {}) : {};
   result.pipelineVersion = PIPELINE_VERSION;
   return { cacheKey, cached, result };
@@ -154,7 +213,10 @@ async function runStructureStage({ cacheKey, result, target, provider, aiConfig,
   if (result.pipeline?.marketStructure) return result.pipeline.marketStructure;
   onProgress('استخراج زیرشاخه‌ها و مدل‌های واقعی بازار از شواهد کسب‌وکارها...');
   const businesses = result.businesses.map((item) => ({ id: item.canonicalId || businessKey(item), name: item.name, signals: evidence[item.canonicalId || businessKey(item)]?.signals || {}, evidence: evidence[item.canonicalId || businessKey(item)]?.evidence || [] }));
-  const structure = await analyzeWithAI(provider, aiConfig, structurePrompt(target, businesses, reviewBriefing));
+  const focusInstruction = target.category
+    ? `\n\nدامنه رقابت را قفل کن: دسته فعالیت هدف «${target.category}» است. فقط همین زیرشاخه را هسته تحلیل قرار بده. حداکثر دو گروه مدل کسب‌وکار در همین زیرشاخه بساز: برند شخصی و برند کسب‌وکاری/تیمی، مگر اینکه شواهد صریح مدل دیگری در همین زیرشاخه وجود داشته باشد. برای هر businessModel فیلد modelType با یکی از personal_brand|business_brand|indirect برگردان. برند شخصی فقط وقتی مجاز است که نام شخص، چهره/مدرس محوری یا personalBrand=true در شواهد دیده شود. نام‌هایی شامل آکادمی، آموزشگاه، مؤسسه، کالج، شرکت، گروه، تیم، پلتفرم و معادل انگلیسی آن‌ها باید business_brand باشند، مگر شاهد صریح خلاف آن وجود داشته باشد. در هر classification نیز modelType و classificationEvidence را برگردان و تعریف همان businessModel را الزام‌آور بدان. کسب‌وکارهای خارج از این دسته را رقیب مستقیم ندان. فقط در صورت اثرگذاری قابل توضیح، حداکثر یک گروه رقیب غیرمستقیم یا جایگزین اضافه کن و آن را با modelType=indirect مشخص کن. خروجی نباید فهرست کلی صنعت باشد.`
+    : '\n\nابتدا مناسب‌ترین زیرشاخه مرتبط با کسب‌وکار هدف را از شواهد تعیین کن و از فهرست‌کردن کل صنعت خودداری کن.';
+  const structure = await analyzeWithAI(provider, aiConfig, structurePrompt(target, businesses, reviewBriefing) + focusInstruction);
   result.pipeline = { ...(result.pipeline || {}), marketStructure: structure };
   await persistPipeline(cacheKey, result);
   return structure;
@@ -163,7 +225,10 @@ async function runStructureStage({ cacheKey, result, target, provider, aiConfig,
 async function runPlacementStage({ cacheKey, result, target, provider, aiConfig, onProgress, evidence, structure, targetSourceEvidence, reviewBriefing = '' }) {
   if (result.pipeline?.placements) return result.pipeline.placements;
   onProgress('تعیین جایگاه کسب‌وکار هدف و تحلیل عمیق زیرشاخه آن...');
-  const placement = await analyzeWithAI(provider, aiConfig, placementPrompt(target, structure, evidence, targetSourceEvidence, reviewBriefing));
+  const focusInstruction = target.category
+    ? `\n\nدسته فعالیت هدف «${target.category}» است. جایگاه کسب‌وکار هدف را فقط در همین زیرشاخه تعیین کن. رقیب مستقیم یعنی کسب‌وکاری با همان نوع خدمت و مدل ارائه؛ رقیب غیرمستقیم/جایگزین را فقط در صورت اثرگذاری روشن و با برچسب جداگانه معرفی کن.`
+    : '';
+  const placement = await analyzeWithAI(provider, aiConfig, placementPrompt(target, structure, evidence, targetSourceEvidence, reviewBriefing) + focusInstruction);
   result.pipeline = { ...(result.pipeline || {}), placements: placement };
   await persistPipeline(cacheKey, result);
   return placement;
@@ -188,17 +253,76 @@ function applyPipelineResult(result, target, structure = {}, placement = {}, evi
   result.opportunities = result.targetSubindustryBrief?.opportunities || [];
   result.threats = result.targetSubindustryBrief?.threats || [];
   const decisions = new Map((Array.isArray(structure.classifications) ? structure.classifications : []).map((item) => [String(item.businessId), item]));
+  const modelList = [...standardModels.values()];
   const categories = result.subindustries.map((subindustry, index) => ({ id: `subindustry-${index}`, name: subindustry.name, description: subindustry.description || `زیرشاخه تخصصی ${subindustry.name} در صنعت ${target.industry}.`, businesses: [] }));
-  result.businesses.forEach((business) => { const id = business.canonicalId || businessKey(business); const decision = decisions.get(id); if (!decision?.relevant || !standardModels.has(clean(decision.businessModel))) return; const category = categories.find((item) => item.name === decision.subindustry); if (category) category.businesses.push({ ...business, category: decision.subindustry, businessModel: decision.businessModel, evidence: evidence[id]?.evidence || [] }); });
+  result.businesses.forEach((business) => { const id = business.canonicalId || businessKey(business); const rawDecision = decisions.get(id); const decision = validateModelAssignment(rawDecision, business, evidence[id], modelList); if (!decision?.relevant || !standardModels.has(clean(decision.businessModel))) return; const category = categories.find((item) => item.name === decision.subindustry); if (category) category.businesses.push({ ...business, category: decision.subindustry, businessModel: decision.businessModel, modelType: decision.modelType || modelTypeOf(standardModels.get(clean(decision.businessModel))), classificationAdjusted: Boolean(decision.classificationAdjusted), evidence: evidence[id]?.evidence || [] }); });
   result.categories = categories.filter((category) => category.businesses.length > 0);
   result.totalBusinesses = result.categories.reduce((sum, category) => sum + category.businesses.length, 0);
 }
 
+const INSTITUTIONAL_NAME = /آکادمی|آموزشگاه|م[ؤو]سسه|کالج|دانشگاه|مرکز|شرکت|گروه|تیم|پلتفرم|academy|institute|college|university|center|centre|company|group|team|platform|school/i;
+
+function modelTypeOf(model = {}) {
+  if (['personal_brand', 'business_brand', 'indirect'].includes(model.modelType)) return model.modelType;
+  const text = `${model.name || ''} ${model.definition || ''}`;
+  if (/غیرمستقیم|جایگزین|indirect|substitute/i.test(text)) return 'indirect';
+  if (/برند شخصی|پرسونال|مدرس فردی|personal.?brand|individual/i.test(text)) return 'personal_brand';
+  if (/آکادمی|آموزشگاه|م[ؤو]سسه|تیمی|کسب.?وکاری|business.?brand|academy|institution|team/i.test(text)) return 'business_brand';
+  return '';
+}
+
+function validateModelAssignment(decision, business = {}, evidenceRow = {}, models = []) {
+  if (!decision?.relevant) return decision;
+  const selectedModel = models.find((model) => clean(model.name) === clean(decision.businessModel));
+  const selectedType = modelTypeOf(selectedModel || { modelType: decision.modelType, name: decision.businessModel });
+  const evidenceText = `${business.name || ''} ${business.category || ''} ${business.website || ''} ${(evidenceRow?.evidence || []).map((item) => item?.text || '').join(' ')}`;
+  const hasInstitutionalIdentity = INSTITUTIONAL_NAME.test(evidenceText);
+  if (selectedType !== 'personal_brand' || !hasInstitutionalIdentity) return { ...decision, modelType: selectedType || decision.modelType };
+  const businessModel = models.find((model) => modelTypeOf(model) === 'business_brand');
+  if (!businessModel) return { ...decision, relevant: false, classificationAdjusted: true, classificationReason: 'institutional_identity_conflicts_with_personal_brand' };
+  return { ...decision, businessModel: businessModel.name, modelType: 'business_brand', classificationAdjusted: true, classificationReason: 'institutional_identity_requires_business_brand' };
+}
+
 function businessKey(item = {}) { return `${clean(item.name)}|${clean(item.website)}|${clean(item.instagramHandle)}`.toLowerCase(); }
 
-function evidencePrompt(target, rows) { return `تو فقط استخراج‌کننده شواهد بازار ایران هستی. برای هر کسب‌وکار فقط ویژگی‌هایی را ثبت کن که از داده موجود قابل مشاهده است؛ حدس نزن و مدل کسب‌وکار جدید نساز. وجود آدرس/لیست Google Maps به‌تنهایی شواهد فروش حضوری است؛ وجود سایت/لینک سفارش/محصول به‌تنهایی شواهد فروش آنلاین است. اگر هر دو شواهد وجود داشتند، هر دو را true کن و evidence جداگانه بده. صنعت: ${target.industry}. خروجی فقط JSON معتبر با ساختار {"items":[{"businessId":"...","signals":{"manufacturer":false,"onlineRetail":false,"physicalRetail":false,"omnichannelRetail":false,"wholesaleB2B":false,"marketplaceSeller":false,"personalBrand":false,"organicBrand":false,"processedBrand":false,"subscriptionOrGifting":false,"customOrder":false},"evidence":[{"signal":"...","text":"...","source":"website|instagram|maps"}],"evidenceStatus":"observed|weak|not_found"}]}. omnichannelRetail فقط وقتی true است که onlineRetail و physicalRetail هر دو true باشند. داده‌ها: ${JSON.stringify(rows)}`; }
+function findTargetInstagramProfile(items = [], target = {}) {
+  const targetHandle = normalizeInstagramHandle(target.instagramHandle).toLowerCase();
+  if (!targetHandle) return null;
+  return items.find((item) => normalizeInstagramHandle(item.username || item.instagramHandle || item.url || item.profileUrl).toLowerCase() === targetHandle) || null;
+}
 
-function rawReviewPrompt(target, businesses) { return `تو پژوهشگر ارشد بازار ایران هستی. داده‌های خام زیر از Google Maps و Instagram برای صنعت اعلامی جمع‌آوری شده‌اند، اما هنوز تحلیل نهایی شروع نشده است. محدودهٔ جغرافیایی این پژوهش «${target.location || 'نامشخص'}» و دامنهٔ بررسی بازار «${researchModeLabel(target.marketResearchMode)}» است؛ فقط همین محدوده و همین دامنه را تحلیل کن و هیچ کسب‌وکار یا روند خارج از آن را وارد متن نکن. یک پیش‌تحلیل فارسی در دقیقاً ۲ یا ۳ پاراگراف پیوسته بنویس تا کاربر آن را تأیید یا اصلاح کند. متن باید تصویر کلی صنعت، نشانه‌های قابل مشاهده در کسب‌وکارهای کشف‌شده، برداشت اولیه از بخش‌های بازار، و هر ابهام یا ریسک داده را پوشش دهد. از ساختن واقعیت، آمار و رقیب جدید خودداری کن؛ صنعت واردشده را قطعی فرض نکن و اگر با داده‌ها مبهم است صریحاً بگو. خروجی فقط JSON معتبر با ساختار {"briefing":"..."} باشد. کسب‌وکار هدف: ${JSON.stringify({ name: target.name, industry: target.industry, website: target.website, instagram: target.instagramHandle, location: target.location, marketResearchMode: researchModeLabel(target.marketResearchMode) })}. داده‌های خامِ پالایش‌شده: ${JSON.stringify(businesses.slice(0, 80).map((item) => ({ name: item.name, category: item.category, website: item.website, instagram: item.instagramHandle, location: item.location, source: item.source })))}`; }
+function targetCategoryPrompt(target, profile) {
+  const targetEvidence = {
+    declaredName: target.name,
+    declaredIndustry: target.industry,
+    instagramHandle: target.instagramHandle,
+    telegram: target.telegram || '',
+    instagramFullName: profile?.fullName || profile?.name || '',
+    instagramBio: profile?.biography || profile?.bio || '',
+    instagramExternalUrl: profile?.externalUrl || profile?.website || '',
+    instagramCategory: profile?.businessCategoryName || profile?.categoryName || profile?.category || '',
+  };
+  return `تو فقط دسته فعالیت کسب‌وکار هدف را تعیین می‌کنی. منابع مجاز فقط داده اعلامی خود هدف و پروفایل رسمی Instagram/Telegram او هستند. داده Google Maps، نتایج جست‌وجوی عمومی و کسب‌وکارهای دیگر مطلقاً مجاز نیستند. دسته باید یک زیرشاخه مشخص و قابل استفاده برای کشف رقیب مستقیم باشد، نه صنعت بسیار بزرگ و نه محصول نامرتبط. اگر شواهد پروفایل کم است، صنعت اعلامی کاربر را حفظ کن و confidence را low بگذار؛ هرگز صنعت دیگری نساز. خروجی فقط JSON معتبر: {"category":"...","categoryConfidence":"high|medium|low","categoryEvidence":[{"source":"target_input|target_instagram|target_telegram","text":"شاهد کوتاه"}]}. داده هدف: ${JSON.stringify(targetEvidence)}`;
+}
+
+function targetFocusedReviewPrompt(target, category, profile) {
+  const evidence = {
+    name: target.name,
+    declaredIndustry: target.industry,
+    confirmedCandidateCategory: category,
+    instagramHandle: target.instagramHandle,
+    telegram: target.telegram || '',
+    instagramFullName: profile?.fullName || profile?.name || '',
+    instagramBio: profile?.biography || profile?.bio || '',
+    instagramExternalUrl: profile?.externalUrl || profile?.website || '',
+    location: target.location || '',
+    audienceLanguage: target.audienceLanguage || '',
+    marketResearchMode: researchModeLabel(target.marketResearchMode),
+  };
+  return `تو پیش‌تحلیل کسب‌وکار هدف را پیش از جست‌وجوی رقیب می‌نویسی. فقط از شواهد خود هدف در داده زیر استفاده کن. هنوز هیچ نتیجه Google Maps یا کسب‌وکار دیگری تأیید نشده است؛ درباره ساختار بازار، رقبا یا صنعت دیگری ادعای قطعی نساز. در ۲ پاراگراف فارسی توضیح بده: ۱) دسته پیشنهادی و دلیل آن، ۲) ابهام‌های باقی‌مانده و دامنه‌ای که پس از تأیید برای یافتن رقیب مستقیم جست‌وجو می‌شود. اگر شواهد کم است صریح بگو. خروجی فقط JSON معتبر با ساختار {"briefing":"..."}. داده هدف: ${JSON.stringify(evidence)}`;
+}
+
+function evidencePrompt(target, rows) { return `تو استخراج‌کننده شواهد بازار هستی. برای هر کسب‌وکار فقط ویژگی‌هایی را ثبت کن که از داده موجود قابل مشاهده است؛ حدس نزن و مدل کسب‌وکار جدید نساز. وجود آدرس/لیست Google Maps به‌تنهایی شواهد فروش حضوری است؛ وجود سایت/لینک سفارش/محصول به‌تنهایی شواهد فروش آنلاین است. اگر هر دو شواهد وجود داشتند، هر دو را true کن و evidence جداگانه بده. صنعت: ${target.industry}. محدوده: ${target.location || 'بین‌المللی'}. خروجی فقط JSON معتبر با ساختار {"items":[{"businessId":"...","signals":{"manufacturer":false,"onlineRetail":false,"physicalRetail":false,"omnichannelRetail":false,"wholesaleB2B":false,"marketplaceSeller":false,"personalBrand":false,"organicBrand":false,"processedBrand":false,"subscriptionOrGifting":false,"customOrder":false},"evidence":[{"signal":"...","text":"...","source":"website|instagram|maps"}],"evidenceStatus":"observed|weak|not_found"}]}. omnichannelRetail فقط وقتی true است که onlineRetail و physicalRetail هر دو true باشند. داده‌ها: ${JSON.stringify(rows)}`; }
 
 function structurePrompt(target, businesses, reviewBriefing = '') { return `تو تحلیلگر ساختار بازار ایران هستی. دامنهٔ این پژوهش «${researchModeLabel(target.marketResearchMode)}» است؛ فقط مدل‌ها، بازیگران و شواهد سازگار با همین دامنه را تحلیل کن. ابتدا طبقه‌بندی استاندارد مدل‌های کسب‌وکار متناسب با همین صنعت را استخراج کن؛ مدل‌ها باید اصطلاحات رایج و قابل‌تعریف صنعت باشند، نه نام‌گذاری ابداعی و نه صرفاً کانال فروش. برای هر مدل، «مبنای استاندارد» را به‌صورت کوتاه مشخص کن: نقش در زنجیره ارزش، الگوی درآمد، یا قرارداد رایج صنعت. سپس فقط بر اساس شواهد واقعی، زیرشاخه‌ها و مدل‌های مشاهده‌شده را طبقه‌بندی کن. هر مدل باید دست‌کم یک businessId و شاهد متناظر داشته باشد؛ مدل بدون نمونه یا شاهد را حذف کن. پیش‌تحلیل تأییدشده/اصلاح‌شدهٔ کاربر یک الزام عملیاتی برای جهت تحلیل است: نکات، اصلاحات و محدودیت‌های آن را اعمال کن. فقط اگر با شواهد خام تعارض روشن دارد، تعارض را در industryOverview شفاف کن؛ آن را نادیده نگیر. از دسته‌های عمومی Google Maps مثل مغازه یا فروشگاه به‌عنوان زیرشاخه صنعت استفاده نکن. صنعت: ${target.industry}. کسب‌وکار هدف: ${target.name}. پیش‌تحلیل تأییدشده: ${reviewBriefing || 'ندارد'}. خروجی فقط JSON معتبر با این ساختار: {"industryOverview":"حداقل دو پاراگراف","industryDefinition":"...","businessModels":[{"name":"...","standardBasis":"نقش در زنجیره ارزش|الگوی درآمد|قرارداد رایج صنعت","definition":"...","businessIds":["..."],"evidenceSignals":["..."]}],"subindustries":[{"name":"...","description":"...","businessIds":["..."]}],"classifications":[{"businessId":"...","relevant":true,"subindustry":"...","businessModel":"نام دقیق یکی از businessModels","evidenceSignals":["..."]}]}. در classifications همه businessIdهای مرتبط را بیاور و نام businessModel باید دقیقاً با یکی از مدل‌های businessModels برابر باشد. شواهد: ${JSON.stringify(businesses)}`; }
 
@@ -228,7 +352,7 @@ async function collectTargetModelExamples({ apiToken, target, result, provider, 
 }
 
 function industryCacheKey(target = {}) {
-  return [target.industry, target.location, researchMode(target), target.name, target.website, target.instagramHandle]
+  return [target.industry, target.category, target.location, target.audienceLanguage || 'fa', researchMode(target), target.name, target.website, target.instagramHandle]
     .map((value) => clean(value).toLowerCase().replace(/\s+/g, '-'))
     .join('|');
 }
@@ -296,7 +420,7 @@ async function classifyIndustryResults({ target, result, provider, aiConfig, onP
 }
 
 function normalizeBusiness(item = {}, sourceHint = 'Google Maps') {
-  const website = item.website || item.websiteUrl || item.externalUrl || item.url || '';
+  const website = item.website || item.websiteUrl || item.externalUrl || (sourceHint === 'Instagram' ? '' : item.url) || '';
   const handle = normalizeInstagramHandle(item.instagram || item.instagramUrl || item.instagramHandle || item.username || item.handle || item.profileUrl || '');
   return {
     name: clean(item.title || item.name || item.fullName || item.businessName || item.placeName),
@@ -307,6 +431,7 @@ function normalizeBusiness(item = {}, sourceHint = 'Google Maps') {
     reviews: Number(item.reviewsCount ?? item.reviews ?? 0) || 0,
     category: clean(item.categoryName || item.category || item.type),
     source: item.source || sourceHint,
+    discoveryQuery: clean(item.searchTerm || item.searchQuery || item.searchString || item.search || item.query),
   };
 }
 
@@ -327,9 +452,11 @@ function websiteHost(value = '') {
 function accountMatchScore(business, account) {
   const businessName = normalizedName(business.name);
   const accountName = normalizedName(account.name);
+  const discoveryQuery = normalizedName(account.discoveryQuery);
   const businessHost = websiteHost(business.website);
   const accountHost = websiteHost(account.website);
   if (businessHost && accountHost && businessHost === accountHost) return 1;
+  if (businessName && discoveryQuery === businessName) return 0.94;
   if (!businessName || !accountName) return 0;
   if (businessName === accountName) return 0.96;
   const businessTokens = new Set(businessName.split(' ').filter((item) => item.length > 1));
@@ -364,17 +491,31 @@ function researchModeLabel(value) {
   return ({ online: 'بازار آنلاین', offline: 'بازار آفلاین', hybrid: 'بازار ترکیبی (آنلاین و آفلاین)' })[value] || 'بازار ترکیبی (آنلاین و آفلاین)';
 }
 
+function audienceLanguageLabel(value) {
+  return ({ fa: 'فارسی زبان', en: 'English speaking audience', ar: 'عربی زبان', tr: 'ترکی زبان', de: 'آلمانی زبان', fr: 'فرانسوی زبان', multi: 'چندزبانه بین‌المللی' })[value] || '';
+}
+
+function isGlobalLocation(value = '') {
+  return /کل دنیا|سراسر دنیا|بین.?المللی|جهانی|global|worldwide|international/i.test(String(value));
+}
+
 function marketCollectionPlan(target = {}) {
   const mode = researchMode(target);
-  const base = `${target.industry} ${target.location || ''}`.trim();
+  const language = target.audienceLanguage && target.audienceLanguage !== 'any' ? audienceLanguageLabel(target.audienceLanguage) : '';
+  const global = isGlobalLocation(target.location);
+  const location = global ? '' : (target.location || '');
+  const base = `${target.industry} ${language} ${location}`.trim();
   const terms = mode === 'online'
     ? ['فروش اینترنتی', 'خرید آنلاین', 'فروشگاه آنلاین', 'ecommerce']
     : mode === 'offline'
       ? ['فروشگاه حضوری', 'مغازه', 'بازار محلی', 'عمده فروشی']
       : ['فروش اینترنتی', 'فروشگاه حضوری', 'خرید آنلاین', 'عمده فروشی'];
+  const focusQueries = target.category
+    ? [`${target.industry} ${target.category} ${language} ${location}`.trim(), `${target.category} ${language} ${location}`.trim()]
+    : [];
   return {
     collectInstagram: mode !== 'offline',
-    queries: [base, ...terms.map((term) => `${target.industry} ${term} ${target.location || ''}`.trim())]
+    queries: [...focusQueries, base, ...terms.map((term) => `${target.industry} ${language} ${term} ${location}`.trim()), ...(global ? [`${target.industry} ${target.category || ''} global`, `${target.industry} ${target.category || ''} international`, `${target.industry} ${target.category || ''} worldwide`] : [])]
       .filter((item, index, items) => item && items.indexOf(item) === index),
   };
 }
@@ -398,12 +539,21 @@ function matchesResearchMode(business, target = {}) {
   return true;
 }
 
+function isTargetBusiness(business, target = {}) {
+  const targetHandle = normalizeInstagramHandle(target.instagramHandle).toLowerCase();
+  const businessHandle = normalizeInstagramHandle(business.instagramHandle).toLowerCase();
+  if (targetHandle && businessHandle && targetHandle === businessHandle) return true;
+  const targetName = normalizedName(target.name);
+  const businessName = normalizedName(business.name);
+  return Boolean(targetName && businessName && targetName === businessName);
+}
+
 function buildIndustryMap(target, maps = [], instagram = []) {
   const mapBusinesses = maps.map((item) => normalizeBusiness(item, 'Google Maps'));
   const instagramBusinesses = instagram.map((item) => normalizeBusiness(item, 'Instagram'));
   const { linked, unmatchedInstagram } = linkInstagramAccounts(mapBusinesses, instagramBusinesses);
   const raw = [...linked, ...unmatchedInstagram]
-    .filter((item) => item.name && isWithinGeographicScope(item, target) && matchesResearchMode(item, target));
+    .filter((item) => item.name && !isTargetBusiness(item, target) && isWithinGeographicScope(item, target) && matchesResearchMode(item, target));
   const unique = [...new Map(raw.map((item) => [(`${item.name}|${item.website}|${item.instagramHandle}`).toLowerCase(), item])).values()];
   // Google Maps categories describe the venue, not the industry's competitive
   // subgroups. They must never be shown as market segments.
@@ -421,7 +571,7 @@ function buildIndustryMap(target, maps = [], instagram = []) {
     title: `نقشه اولیه صنعت ${target.industry}`,
     intro: total
       ? `در جست‌وجوی اولیه ${total} کسب‌وکار عمومی پیدا شد. بازار به ${categories.length} بخش قابل بررسی تقسیم شد؛ این دسته‌بندی اولیه است و می‌توانید پیش از شروع گزارش آن را اصلاح کنید.`
-      : `برای صنعت ${target.industry} داده عمومی کافی پیدا نشد. دسته‌بندی اولیه ساخته شده و می‌توانید رقبا را دستی اضافه کنید.`,
+      : `برای صنعت ${target.industry} به‌جز کسب‌وکار هدف، بازیگر رقیب قابل اتکایی پیدا نشد. لطفاً رقبا را دستی اضافه کنید یا جست‌وجوی صنعت را با منابع بیشتری اجرا کنید.`,
     categories,
     businesses: unique,
     totalBusinesses: total,

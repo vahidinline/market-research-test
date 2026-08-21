@@ -20,10 +20,12 @@ import { inspectWebsite } from './utils/website';
 import { collectAllPlatformData } from './utils/platforms';
 import { loadResearchCacheFromKeys, saveResearchCache } from './utils/researchCache';
 import { enforceReportIntegrity } from './utils/reportIntegrity';
+import { useLanguage } from './i18n.jsx';
 
 const STATE = { FORM: 'form', LOADING: 'loading', CPM_APPROVAL: 'cpm_approval', REPORT: 'report' };
 
 export default function App() {
+  const { language, dir } = useLanguage();
   const [appState, setAppState] = useState(STATE.FORM);
   const [loadingStep, setLoadingStep] = useState(0);
   const [loadingError, setLoadingError] = useState(null);
@@ -47,6 +49,7 @@ export default function App() {
     const { provider, apifyToken, aiConfig, target, competitors, industryIntelligence, useMockData } =
       formData;
 
+    target.outputLanguage = language;
     if (useMockData) {
       runWithMockData(target);
       return;
@@ -132,6 +135,7 @@ export default function App() {
           instagramPosts: businessPosts,
           instagramSummary: summarizeInstagramPosts(businessPosts, instagramData?.followersCount || 0),
           websiteData: websiteDataForBusiness,
+          platformData,
         };
       };
 
@@ -236,13 +240,13 @@ export default function App() {
   };
 
   const app = appState === STATE.LOADING ? (
-    <LoadingScreen currentStep={loadingStep} message={loadingMessage} error={loadingError} onUseMockData={handleUseMockFallback} />
+    <LoadingScreen currentStep={loadingStep} message={loadingMessage} error={loadingError} onUseMockData={handleUseMockFallback} language={language} />
   ) : appState === STATE.CPM_APPROVAL && pendingResearch ? (
     <CpmApproval model={pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
     <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} presentationAi={reportAiRuntime} />
   ) : (
-    <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} />
+    <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
   );
-  return <AuthGate>{app}</AuthGate>;
+  return <div dir={dir}><AuthGate>{app}</AuthGate></div>;
 }
