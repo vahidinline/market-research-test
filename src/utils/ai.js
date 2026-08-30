@@ -16,10 +16,10 @@ export function buildAnalysisPrompt(targetBusiness, competitors, profilesData) {
 **کسب‌وکار هدف:** ${targetBusiness.name} (صنعت: ${targetBusiness.industry})
 **اینستاگرام:** @${targetBusiness.instagramHandle}
 **وب‌سایت:** ${targetBusiness.website}
-**کانال‌های دیجیتال هدف:** LinkedIn=${targetBusiness.linkedin || 'ندارد'} | TikTok=${targetBusiness.tiktok || 'ندارد'} | Pinterest=${targetBusiness.pinterest || 'ندارد'}
+**کانال‌های دیجیتال هدف:** LinkedIn=${targetBusiness.linkedin || 'ندارد'} | YouTube=${targetBusiness.youtube || 'ندارد'} | Reddit=${targetBusiness.reddit || 'ندارد'}
 
 **رقبا:**
-${competitors.map((c, i) => `${i + 1}. ${c.name} - @${c.instagramHandle} - ${c.website} - LinkedIn:${c.linkedin || 'ندارد'} - TikTok:${c.tiktok || 'ندارد'} - Pinterest:${c.pinterest || 'ندارد'}`).join('\n')}
+${competitors.map((c, i) => `${i + 1}. ${c.name} - @${c.instagramHandle} - ${c.website} - LinkedIn:${c.linkedin || 'ندارد'} - YouTube:${c.youtube || 'ندارد'} - Reddit:${c.reddit || 'ندارد'}`).join('\n')}
 
 **داده‌های اسکرپ شده از اینستاگرام و وب‌سایت:**
 \`\`\`json
@@ -140,10 +140,9 @@ ${dataJson}
     ]
   },
   "platformAnalytics": {
-    "tiktok": {"status": "active/not_found", "followers": 0, "posts": 0, "engagementRate": 0, "contentNotes": "تحلیل حضور"},
     "youtube": {"status": "active/not_found", "subscribers": 0, "videos": 0, "contentNotes": "تحلیل حضور"},
     "linkedin": {"status": "active/not_found", "followers": 0, "contentNotes": "تحلیل حضور"},
-    "pinterest": {"status": "active/not_found", "followers": 0, "boards": 0, "contentNotes": "تحلیل حضور"}
+    "reddit": {"status": "active/not_found", "posts": 0, "comments": 0, "contentNotes": "تحلیل بحث‌ها و دغدغه‌ها"}
   },
   "recommendations": [
     {
@@ -170,7 +169,7 @@ ${dataJson}
 
 const compactForChunks = (business = {}) => ({
   name: business.name, industry: business.industry, instagramHandle: business.instagramHandle, website: business.website,
-  linkedin: business.linkedin || '', tiktok: business.tiktok || '', pinterest: business.pinterest || '',
+  linkedin: business.linkedin || '', youtube: business.youtube || '', reddit: business.reddit || '',
   twitter: business.twitter || business.x || '', telegram: business.telegram || '',
   instagramData: business.instagramData, instagramSummary: business.instagramSummary,
   instagramPosts: (business.instagramPosts || []).slice(0, 12).map((post) => ({
@@ -218,6 +217,60 @@ const createChunkRunner = (provider, config, onProgress) => async (label, prompt
     }
   }
 };
+
+const AUDIENCE_TOPIC_SCHEMA = '{"topics":[{"rank":1,"topic":"موضوع محدود و مشخص","audienceQuestion":"سؤال واقعی مخاطب با لحن طبیعی","audienceConcern":"دغدغه یا تصمیم پشت سؤال","whyItMatters":"چرا موضوع پیوسته مورد توجه است","searchIntent":"informational|commercial|transactional|navigational","journeyStage":"awareness|consideration|decision|retention","contentAngles":["زاویه مشخص ۱","زاویه مشخص ۲","زاویه مشخص ۳"],"platformSignals":[{"platform":"Google|Instagram|YouTube|LinkedIn|Reddit|Forum|Website","signalType":"search_demand|paa_faq|engagement|repetition|discussion","evidence":"شاهد کوتاه یا not_observed","sourceUrl":null}],"validationStatus":"observed|partially_observed|hypothesis","confidence":"high|medium|low","suggestedQueries":["عبارت اعتبارسنجی ۱","عبارت ۲"],"evergreenReason":"دلیل ماندگاری"}]}';
+
+export async function generateAudienceTopics(provider, config, target, report, platformData = {}, onProgress = () => {}) {
+  const run = createChunkRunner(provider, config, onProgress);
+  const compactDiscoveryData = Object.fromEntries(Object.entries(platformData).map(([platform, payload]) => [platform, {
+    status: payload?.status,
+    error: payload?.error,
+    queries: payload?.queries,
+    items: (payload?.items || []).slice(0, 40).map((item) => ({
+      title: String(item.title || item.name || '').slice(0, 240),
+      text: String(item.text || item.body || item.selftext || item.description || item.caption || item.content || '').slice(0, 320),
+      url: item.url || item.postUrl || item.link || item.webUrl || null,
+      author: item.author || item.authorName || item.channelName || item.username || null,
+      subreddit: item.subreddit || item.communityName || null,
+      likes: item.likes ?? item.likeCount ?? item.score ?? item.numLikes ?? null,
+      comments: item.comments ?? item.commentCount ?? item.numComments ?? null,
+      views: item.views ?? item.viewCount ?? null,
+      shares: item.shares ?? item.shareCount ?? null,
+      publishedAt: item.publishedAt || item.date || item.createdAt || item.timestamp || null,
+    })),
+  }]));
+  const topicContext = {
+    industry: target.industry,
+    target,
+    competitors: report.competitorAnalysis || report.competitorList || [],
+    marketOverview: report.industryOverview,
+    swot: report.swot,
+    existingInstagramEvidence: [report.targetAnalysis, ...(report.competitorAnalysis || [])].filter(Boolean).map((item) => ({ name: item.name, instagramHandle: item.instagramHandle, bestContent: item.instagramAnalytics?.bestContent, contentAnalysis: item.instagramAnalytics?.contentAnalysis })),
+    freshlyCollectedPlatformData: compactDiscoveryData,
+  };
+  const discover = async (startRank, endRank, previousTopics = []) => run(`کشف موضوعات دغدغه‌محور ${startRank} تا ${endRank}...`, jsonOnly(
+    `برای صنعت ${target.industry} دقیقاً ${endRank - startRank + 1} موضوع محدود، مستقل و قابل‌تولید بساز و rank را از ${startRank} تا ${endRank} قرار بده. این‌ها قالب محتوا، هوک، سبک اجرا یا عنوان کلی نیستند؛ هر مورد باید یک سؤال، مشکل، ابهام، ترس، مقایسه یا تصمیم واقعی مخاطب باشد. موضوع‌ها باید بر دو خانواده سیگنال تکیه کنند: ۱) تقاضای جست‌وجو، FAQ، People Also Ask و بحث‌های پرتکرار؛ ۲) استقبال از محتوایی که خود موضوع عامل توجه آن بوده، نه صرفاً اجرای سرگرم‌کننده. داده‌های Instagram و داده تازه Apify از YouTube، LinkedIn و Reddit را شاهد مستقیم بدان. درباره Google و فروم‌های فاقد داده فقط وقتی observed بنویس که در ورودی شاهد یا URL وجود دارد؛ وگرنه hypothesis یا partially_observed ثبت کن و evidence را not_observed بنویس. عدد و URL اختراع نکن. موضوع‌ها تکراری یا بازنویسی فهرست قبلی نباشند و contentAngles مستقیماً قابل تولید باشند.`,
+    { ...topicContext, previousTopics }, AUDIENCE_TOPIC_SCHEMA,
+  ));
+  const first = await discover(1, 25);
+  const firstTopics = Array.isArray(first.topics) ? first.topics : [];
+  const second = await discover(26, 50, firstTopics.map((item) => item.topic));
+  const topics = [...firstTopics, ...(Array.isArray(second.topics) ? second.topics : [])].slice(0, 50).map((item, index) => ({ ...item, rank: index + 1 }));
+  if (topics.length < 50) throw new Error(`فهرست موضوعات پرتکرار ناقص است: ${topics.length} از ۵۰ موضوع تولید شد.`);
+  return topics;
+}
+
+export async function generateTopicSearchQueries(provider, config, target, report, onProgress = () => {}) {
+  const run = createChunkRunner(provider, config, onProgress);
+  const result = await run('ساخت عبارت‌های جست‌وجوی موضوعی برای Apify...', jsonOnly(
+    `برای کشف دغدغه‌ها و موضوعات پرتکرار بازار ${target.industry} دقیقاً ۱۵ عبارت جست‌وجوی مستقل بساز. عبارت‌ها درباره برند هدف نباشند؛ باید کل بازار، مسائل مخاطب، سؤال‌های خرید، ترس‌ها، مقایسه‌ها، خطاهای رایج و تصمیم‌های پرتکرار را پوشش دهند. عبارت‌ها برای جست‌وجوی محتوا و گفتگو در YouTube، Reddit و LinkedIn مناسب باشند، با زبان مخاطب گزارش نوشته شوند و از عبارت‌های بسیار کلی دوری کنند.`,
+    { target, industryOverview: report.industryOverview, marketCategories: report.marketCategories, swot: report.swot, services: report.targetAnalysis?.services },
+    '{"queries":["عبارت جست‌وجوی دقیق ۱","عبارت جست‌وجوی دقیق ۲"]}',
+  ));
+  const queries = [...new Set((result.queries || []).map((value) => String(value).trim()).filter(Boolean))].slice(0, 15);
+  if (queries.length < 10) throw new Error('عبارت‌های جست‌وجوی موضوعی کافی تولید نشد.');
+  return queries;
+}
 
 export async function prepareResearchMethodology(provider, config, target, competitors, profilesData, onProgress = () => {}) {
   const run = createChunkRunner(provider, config, onProgress);
@@ -306,6 +359,7 @@ export async function completeResearchWithApprovedCpm(provider, config, target, 
     { cpmModel, evaluations: cpmEvaluations, businesses: evaluationTargets.map((item) => item.name) },
     '{"factorOverviews":{"social":"...","website":"...","product_service":"...","industry_specific":"..."}}',
   ));
+  const audienceTopics = await generateAudienceTopics(provider, config, target, { ...overview, targetAnalysis, competitorAnalysis }, profilesData.target?.platformData || {}, onProgress);
   const strategy = await run('تولید پیشنهادات اجرایی...', jsonOnly(
     `بر اساس تحلیل صنعت، SWOT و پرونده رقبا برای ${target.name} دقیقاً ۵ پیشنهاد اولویت‌بندی‌شده با ۲ تا ۴ گام اجرایی تولید کن. نقشه جایگاه تولید نکن؛ اپلیکیشن آن را به‌صورت قطعی از امتیازهای CPM تأییدشده محاسبه می‌کند.`,
     { overview, competitors: synthesisData.competitors },
@@ -317,7 +371,7 @@ export async function completeResearchWithApprovedCpm(provider, config, target, 
     verified: Boolean(profilesData.competitors.find((business) => business.name === item.name)?.instagramData?.isVerified),
     overallScore: item.overallScore,
   }));
-  return { ...overview, industryOverview: target.industryBriefing ? `${target.industryBriefing}\n\nتحلیل تکمیلی بر اساس داده‌های گزارش:\n${overview.industryOverview || ''}` : overview.industryOverview, competitorList, targetAnalysis, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, ...strategy };
+  return { ...overview, industryOverview: target.industryBriefing ? `${target.industryBriefing}\n\nتحلیل تکمیلی بر اساس داده‌های گزارش:\n${overview.industryOverview || ''}` : overview.industryOverview, competitorList, targetAnalysis, competitorAnalysis, cpmModel, cpmEvaluations, factorOverviews: factorOverviews.factorOverviews || factorOverviews, audienceTopics, ...strategy };
 }
 
 // Compatibility helper for non-interactive callers. The app uses the two-stage

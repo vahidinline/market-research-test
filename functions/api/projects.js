@@ -9,8 +9,11 @@ export async function onRequestGet({ request, env }) {
     const row = await env.DB.prepare('SELECT * FROM projects WHERE id=?1').bind(id).first();
     return row ? json({ ...row, snapshot: JSON.parse(row.snapshot) }) : json({ error: 'not found' }, 404);
   }
-  const { results } = await env.DB.prepare('SELECT id, name, industry, created_at, updated_at FROM projects ORDER BY updated_at DESC').all();
-  return json({ projects: results || [] });
+  const { results } = await env.DB.prepare('SELECT id, name, industry, snapshot, created_at, updated_at FROM projects ORDER BY updated_at DESC').all();
+  return json({ projects: (results || []).map((row) => ({
+    ...row,
+    snapshot: JSON.parse(row.snapshot || '{}'),
+  })) });
 }
 
 export async function onRequestPost({ request, env }) {

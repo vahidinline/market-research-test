@@ -7,8 +7,8 @@ const SOCIAL_FRAMEWORK = {
   instagram: { label: 'اینستاگرام', dimensions: ['کیفیت محتوای بصری', 'کیفیت محتوای نوشتاری', 'استانداردهای صفحه', 'استراتژی محتوا', 'عملکرد و اعتماد'] },
   linkedin: { label: 'لینکدین', dimensions: ['کیفیت محتوای تخصصی', 'استانداردهای صفحه', 'رهبری فکری و استراتژی', 'تعامل و لیدسازی', 'اعتبار حرفه‌ای'] },
   twitter: { label: 'توییتر / X', dimensions: ['کیفیت پیام و Thread', 'استانداردهای پروفایل', 'سرعت و استراتژی گفتگو', 'تعامل و دیده‌شدن', 'اعتبار و دقت'] },
-  pinterest: { label: 'پینترست', dimensions: ['کیفیت بصری Pin', 'استانداردهای Board', 'کشف‌پذیری و استراتژی', 'ذخیره‌سازی و ترافیک', 'اعتماد و اصالت'] },
-  tiktok: { label: 'تیک‌تاک', dimensions: ['کیفیت ویدئو', 'Hook و متن', 'استانداردهای صفحه', 'زمان تماشا و تعامل', 'اصالت و اعتبار'] },
+  youtube: { label: 'یوتیوب', dimensions: ['کیفیت ویدئو', 'عنوان و توضیحات', 'استانداردهای کانال', 'بازدید و تعامل', 'اعتبار و تخصص'] },
+  reddit: { label: 'ردیت', dimensions: ['کیفیت بحث و پاسخ', 'تناسب Subreddit', 'تکرار دغدغه‌ها', 'رأی و مشارکت', 'اعتبار مشارکت‌کنندگان'] },
   telegram: { label: 'تلگرام', dimensions: ['کیفیت چندرسانه‌ای', 'کیفیت متن', 'استانداردهای کانال', 'بازدید و جامعه‌سازی', 'اعتماد و پاسخ‌گویی'] },
 };
 const defaultSocialWeights = Object.fromEntries(Object.entries(SOCIAL_FRAMEWORK).map(([id, channel]) => [id, { channelWeight: 1 / Object.keys(SOCIAL_FRAMEWORK).length, dimensions: Object.fromEntries(channel.dimensions.map((_, index) => [`d${index}`, 0.2])) }]));

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ConfigForm from './components/ConfigForm';
 import LoadingScreen from './components/LoadingScreen';
 import ResearchDashboard from './components/ResearchDashboard';
@@ -12,12 +12,12 @@ import {
   normalizeInstagramHandle,
   postOwnerHandle,
 } from './utils/apify';
-import { completeResearchWithApprovedCpm, prepareResearchMethodology } from './utils/ai';
+import { completeResearchWithApprovedCpm, generateAudienceTopics, generateTopicSearchQueries, prepareResearchMethodology } from './utils/ai';
 import { MOCK_ANALYSIS } from './utils/mockData';
 import AuthGate from './components/AuthGate';
-import { loadProject, saveProject } from './utils/projects';
+import { loadProject, loadProjectRecord, saveProject } from './utils/projects';
 import { inspectWebsite } from './utils/website';
-import { collectAllPlatformData } from './utils/platforms';
+import { collectAllPlatformData, collectTopicDiscoveryData } from './utils/platforms';
 import { loadResearchCacheFromKeys, saveResearchCache } from './utils/researchCache';
 import { enforceReportIntegrity } from './utils/reportIntegrity';
 import { useLanguage } from './i18n.jsx';
@@ -35,6 +35,8 @@ export default function App() {
   const [isMock, setIsMock] = useState(false);
   const [pendingResearch, setPendingResearch] = useState(null);
   const [reportAiRuntime, setReportAiRuntime] = useState(null);
+  const [currentProjectId, setCurrentProjectId] = useState(null);
+  const [ownerPanel, setOwnerPanel] = useState({ loading: false, error: '', project: null });
   // Keep scraped data for this app session so an AI parse/retry never costs another Apify run.
   const profilesCache = useRef(new Map());
 
@@ -183,7 +185,8 @@ export default function App() {
       analysis = enforceReportIntegrity(analysis, profilesData);
       setReportTarget(target);
       setReportData(analysis);
-      await saveProject(analysis, target);
+      const savedProject = await saveProject(analysis, target);
+      setCurrentProjectId(savedProject.id);
       setPendingResearch(null);
       setIsMock(false);
       setAppState(STATE.REPORT);
@@ -207,6 +210,49 @@ export default function App() {
     setIsMock(false);
     setPendingResearch(null);
     setReportAiRuntime(null);
+    setCurrentProjectId(null);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('panel') !== 'owner') return;
+    const projectId = params.get('project');
+    const token = params.get('token');
+    if (!projectId || !token) {
+      setOwnerPanel({ loading: false, error: 'لینک پنل ناقص است.', project: null });
+      return;
+    }
+    let active = true;
+    setOwnerPanel({ loading: true, error: '', project: null });
+    loadProjectRecord(projectId)
+      .then((record) => {
+        if (!active) return;
+        const savedToken = String(record?.snapshot?._project?.ownerAccessToken || '');
+        if (!record || savedToken !== token) {
+          setOwnerPanel({ loading: false, error: 'دسترسی این پنل معتبر نیست.', project: null });
+          return;
+        }
+        setOwnerPanel({ loading: false, error: '', project: record });
+      })
+      .catch((error) => {
+        if (active) setOwnerPanel({ loading: false, error: error.message || 'بارگذاری پنل ناموفق بود.', project: null });
+      });
+    return () => { active = false; };
+  }, []);
+
+  const handleRefreshTopics = async (onProgress = () => {}, runtimeOverride = null) => {
+    if (!reportData || !reportTarget) throw new Error('گزارش فعالی برای به‌روزرسانی وجود ندارد.');
+    const runtime = runtimeOverride || reportAiRuntime || { provider: 'gemini', config: { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite' } };
+    onProgress('ساخت عبارت‌های جست‌وجو از صنعت، مخاطب و خدمات گزارش...');
+    const searchQueries = await generateTopicSearchQueries(runtime.provider, runtime.config, reportTarget, reportData, onProgress);
+    onProgress('جست‌وجوی بازار در YouTube، LinkedIn و Reddit با Apify...');
+    const platformData = await collectTopicDiscoveryData(import.meta.env.VITE_APIFY_API_KEY || '', searchQueries);
+    onProgress('تحلیل سیگنال‌ها و ساخت ۵۰ موضوع پرتکرار...');
+    const audienceTopics = await generateAudienceTopics(runtime.provider, runtime.config, reportTarget, reportData, platformData, onProgress);
+    const updated = { ...reportData, id: currentProjectId || reportData.id, audienceTopics, audienceTopicsMeta: { updatedAt: new Date().toISOString(), searchMode: 'market_wide_keyword_discovery', searchQueries, sourceStatus: Object.fromEntries(Object.entries(platformData).map(([key, value]) => [key, value.status])) } };
+    await saveProject(updated, reportTarget);
+    setReportData(updated);
+    return audienceTopics;
   };
 
   const handleLoadProject = async (id) => {
@@ -235,6 +281,7 @@ export default function App() {
         repaired = enforceReportIntegrity(snapshot, { target: enrich(savedTarget), competitors: savedCompetitors.map(enrich) });
       }
       setReportData(repaired); setReportTarget(savedTarget); setIsMock(false); setAppState(STATE.REPORT);
+      setCurrentProjectId(id);
       setReportAiRuntime(null);
     }
   };
@@ -244,9 +291,16 @@ export default function App() {
   ) : appState === STATE.CPM_APPROVAL && pendingResearch ? (
     <CpmApproval model={pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
-    <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} presentationAi={reportAiRuntime} />
+    <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} presentationAi={reportAiRuntime} onRefreshTopics={handleRefreshTopics} />
   ) : (
     <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
   );
+  if (ownerPanel.loading) return <div dir={dir} className="min-h-screen grid place-items-center text-slate-200">در حال بارگذاری پنل کارفرما…</div>;
+  if (ownerPanel.error) return <div dir={dir} className="min-h-screen grid place-items-center text-red-300">{ownerPanel.error}</div>;
+  if (ownerPanel.project) {
+    const snapshot = ownerPanel.project.snapshot || {};
+    const target = snapshot._project?.target || snapshot.target || { name: ownerPanel.project.name || 'گزارش' };
+    return <div dir={dir}><ResearchDashboard data={snapshot} target={target} isMock={false} onReset={() => window.location.assign(window.location.pathname)} presentationAi={null} onRefreshTopics={null} readOnly /></div>;
+  }
   return <div dir={dir}><AuthGate>{app}</AuthGate></div>;
 }

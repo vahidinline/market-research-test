@@ -38,7 +38,7 @@ The report is divided into seven focused views instead of one long page:
 Each competitor can include:
 
 - Business bio, location, website, and active platforms
-- Instagram, LinkedIn, TikTok, and Pinterest business links
+- Instagram, LinkedIn, YouTube, and Reddit business/community links
 - Product and service categories
 - Marketing activities and campaign observations
 - Instagram publishing dates, follower count, post count, and engagement rate
@@ -108,10 +108,9 @@ VITE_APIFY_API_KEY=your_apify_token
 VITE_GEMINI_MODEL=gemini-3.5-flash-lite
 
 # Optional Apify Actor IDs for additional public platforms
-VITE_APIFY_TIKTOK_ACTOR=
 VITE_APIFY_YOUTUBE_ACTOR=
 VITE_APIFY_LINKEDIN_ACTOR=
-VITE_APIFY_PINTEREST_ACTOR=
+VITE_APIFY_REDDIT_ACTOR=
 
 # Demo/client-side gate only — not production authentication
 VITE_AUTH_EMAIL=your-email@example.com
@@ -195,6 +194,22 @@ For production use, replace `AuthGate` with a server-backed authentication syste
 - A custom backend session flow
 
 Do not use the current client-side credentials as security protection for sensitive data.
+
+## SendPulse invitation emails
+
+The invite endpoint supports either a static SendPulse API key or OAuth client credentials. Configure one of these sets as Cloudflare Pages secrets (do not put them in `VITE_*` variables):
+
+```sh
+npx wrangler pages secret put SENDPULSE_API_KEY
+# Or, instead of a static key:
+npx wrangler pages secret put SENDPULSE_CLIENT_ID
+npx wrangler pages secret put SENDPULSE_CLIENT_SECRET
+
+npx wrangler pages secret put SENDPULSE_FROM_EMAIL
+npx wrangler pages secret put SENDPULSE_FROM_NAME
+```
+
+`SENDPULSE_FROM_EMAIL` must be an active sender that is approved for SendPulse SMTP. The archive shows whether an email and invite status were stored remotely; a browser-only save cannot create a usable client link on another device.
 
 ## Project structure
 

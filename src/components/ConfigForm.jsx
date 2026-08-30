@@ -10,6 +10,9 @@ import {
   Download,
   Upload,
   MapPin,
+  Mail,
+  Send,
+  Pencil,
 } from 'lucide-react';
 import {
   deleteProject,
@@ -17,6 +20,9 @@ import {
   importProjectTransfer,
   listProjects,
   loadProject,
+  loadProjectRecord,
+  saveProject,
+  getOwnerPanelUrl,
 } from '../utils/projects';
 import IndustryExplorer from './IndustryExplorer';
 import { testAiConnection } from '../utils/ai';
@@ -29,8 +35,8 @@ const defaultCompetitor = () => ({
   instagramHandle: '',
   website: '',
   linkedin: '',
-  tiktok: '',
-  pinterest: '',
+  youtube: '',
+  reddit: '',
   twitter: '',
   telegram: '',
 });
@@ -38,6 +44,8 @@ const defaultCompetitor = () => ({
 const STORAGE_KEY = 'market_research_form';
 const DEFAULT_TARGET = {
   name: '',
+  ownerName: '',
+  ownerEmail: '',
   industry: '',
   category: '',
   location: '',
@@ -46,8 +54,8 @@ const DEFAULT_TARGET = {
   instagramHandle: '',
   website: '',
   linkedin: '',
-  tiktok: '',
-  pinterest: '',
+  youtube: '',
+  reddit: '',
   twitter: '',
   telegram: '',
 };
@@ -81,6 +89,13 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
   );
   const [projects, setProjects] = useState([]);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [inviteBusy, setInviteBusy] = useState(null);
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [inviteError, setInviteError] = useState('');
+  const [ownerEmailDrafts, setOwnerEmailDrafts] = useState({});
+  const [ownerNameDrafts, setOwnerNameDrafts] = useState({});
+  const [emailSaveBusy, setEmailSaveBusy] = useState(null);
+  const [invitationEditors, setInvitationEditors] = useState({});
   const [provider, setProvider] = useState(
     saved?.settings?.provider || 'gemini',
   );
@@ -197,6 +212,89 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
       setTransferError(error.message || 'خروجی گرفتن از گزارش ناموفق بود.');
     } finally {
       setTransferBusy(false);
+    }
+  };
+
+  const handleSendInvite = async (projectId) => {
+    setInviteBusy(projectId);
+    setInviteMessage('');
+    setInviteError('');
+    console.info('[send-invite] started', { projectId });
+    try {
+      const record = await loadProjectRecord(projectId);
+      const ownerEmail = String(record?.snapshot?._project?.ownerEmail || '').trim();
+      const ownerName = String(record?.snapshot?._project?.target?.ownerName || '').trim();
+      const panelToken = String(record?.snapshot?._project?.ownerAccessToken || '').trim();
+      if (!ownerEmail) throw new Error('برای این پروژه ایمیل کارفرما ثبت نشده است.');
+      const panelUrl = getOwnerPanelUrl(projectId, panelToken);
+      const response = await fetch('/api/send-invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          projectName: record?.name || 'گزارش تحقیق بازار',
+          ownerName,
+          ownerEmail,
+          panelUrl,
+        }),
+      });
+      const raw = await response.text();
+      let body = {};
+      try { body = raw ? JSON.parse(raw) : {}; } catch { body = { error: raw }; }
+      console.info('[send-invite] response', { projectId, status: response.status, body });
+      if (!response.ok) throw new Error(body.error || body.message || `خطای سرور (${response.status})`);
+      const invitation = {
+        ...(record.snapshot._project?.invitation || {}),
+        lastSentAt: new Date().toISOString(),
+        messageId: body?.result?.id || null,
+        recipient: ownerEmail,
+        recipientName: ownerName,
+      };
+      const saved = await saveProject({ ...record.snapshot, id: projectId, _project: { ...record.snapshot._project, invitation } }, record.snapshot._project?.target || {});
+      // Use the record that was just written. Refetching here can briefly restore
+      // an older project snapshot and make the saved address look empty.
+      setProjects((items) => items.map((project) => project.id === projectId ? saved : project));
+      setInvitationEditors((items) => ({ ...items, [projectId]: false }));
+      setInviteMessage(saved.persistence === 'remote'
+        ? `دعوت برای ${ownerEmail} به SendPulse تحویل شد.`
+        : `دعوت ارسال شد، اما وضعیت آن فقط روی همین مرورگر ذخیره شد.`);
+    } catch (error) {
+      console.error('[send-invite] failed', error);
+      setInviteError(error.message || 'ارسال دعوت ناموفق بود.');
+    } finally {
+      setInviteBusy(null);
+    }
+  };
+
+  const handleSaveOwnerEmail = async (projectId) => {
+    const email = String(ownerEmailDrafts[projectId] || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setInviteError('یک ایمیل معتبر برای کارفرما وارد کنید.');
+      return;
+    }
+    setEmailSaveBusy(projectId);
+    setInviteMessage('');
+    setInviteError('');
+    try {
+      const record = await loadProjectRecord(projectId);
+      if (!record?.snapshot) throw new Error('گزارش پیدا نشد.');
+      const ownerName = String(ownerNameDrafts[projectId] ?? record.snapshot._project?.target?.ownerName ?? '').trim();
+      const target = { ...(record.snapshot._project?.target || {}), ownerName, ownerEmail: email };
+      const saved = await saveProject({ ...record.snapshot, id: projectId }, target);
+      // Update this card from the write result immediately. A second list request
+      // could otherwise paint an older cached record back over the saved email.
+      setProjects((items) => items.map((project) => project.id === projectId ? saved : project));
+      // Saving contact details is only the first step. Keep this editor open so
+      // the administrator can send the invitation immediately afterwards.
+      setInvitationEditors((items) => ({ ...items, [projectId]: true }));
+      setInviteMessage(saved.persistence === 'remote'
+        ? 'ایمیل کارفرما ذخیره شد؛ اکنون روی «ارسال دعوت» بزنید.'
+        : `ایمیل فقط روی همین مرورگر ذخیره شد: ${saved.persistenceError}`);
+      setInviteError('');
+    } catch (error) {
+      setInviteError(error.message || 'ذخیره ایمیل ناموفق بود.');
+    } finally {
+      setEmailSaveBusy(null);
     }
   };
 
@@ -353,50 +451,32 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           </div>
           {projects.length ? (
             <div className="projects-list">
-              {projects.map((p) => (
-                <article className="project-item" key={p.id}>
-                  <button
-                    type="button"
-                    className="project-open"
-                    onClick={() => onLoadProject(p.id)}>
-                    <span className="project-mark">
-                      {(p.name || 'پ').slice(0, 1)}
-                    </span>
-                    <span>
-                      <b>{p.name}</b>
-                      <small>
-                        {p.industry || 'بدون دسته‌بندی'} ·{' '}
-                        {p.updated_at
-                          ? new Date(p.updated_at).toLocaleDateString('fa-IR')
-                          : 'تاریخ نامشخص'}
-                      </small>
-                    </span>
-                  </button>
-                  {pendingDelete === p.id ? (
-                    <div className="project-confirm">
-                      <span>حذف شود؟</span>
-                      <button
-                        type="button"
-                        onClick={() => removeSavedProject(p.id)}>
-                        بله، حذف
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPendingDelete(null)}>
-                        انصراف
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="project-delete"
-                      onClick={() => setPendingDelete(p.id)}
-                      aria-label={`حذف ${p.name}`}>
-                      <Trash2 size={16} />
+              {projects.map((p) => {
+                const invitation = p.snapshot?._project?.invitation;
+                const hasSentInvite = Boolean(invitation?.lastSentAt);
+                const editorOpen = invitationEditors[p.id] ?? !hasSentInvite;
+                const storedOwnerName = p.snapshot?._project?.target?.ownerName || invitation?.recipientName || '';
+                const ownerName = storedOwnerName || 'کارفرما';
+                const ownerEmail = p.snapshot?._project?.ownerEmail || invitation?.recipient || '';
+                const hasUnsavedInvitationChange = (ownerEmailDrafts[p.id] !== undefined
+                  && ownerEmailDrafts[p.id].trim().toLowerCase() !== ownerEmail.toLowerCase())
+                  || (ownerNameDrafts[p.id] !== undefined && ownerNameDrafts[p.id].trim() !== storedOwnerName);
+                return <article className="project-item" key={p.id}>
+                  <header className="project-item-head">
+                    <button type="button" className="project-open" onClick={() => onLoadProject(p.id)}>
+                      <span className="project-mark">{(p.name || 'پ').slice(0, 1)}</span>
+                      <span><b>{p.name}</b><small>{p.industry || 'بدون دسته‌بندی'} · {p.updated_at ? new Date(p.updated_at).toLocaleDateString('fa-IR') : 'تاریخ نامشخص'}</small></span>
                     </button>
-                  )}
+                    {pendingDelete === p.id ? (
+                      <div className="project-delete-confirm"><span>حذف شود؟</span><button type="button" onClick={() => removeSavedProject(p.id)}>بله، حذف</button><button type="button" onClick={() => setPendingDelete(null)}>انصراف</button></div>
+                    ) : <button type="button" className="project-delete" onClick={() => setPendingDelete(p.id)} aria-label={`حذف ${p.name}`}><Trash2 size={16} /></button>}
+                  </header>
+                  <section className="project-invitation" aria-label={`دعوت کارفرما برای ${p.name}`}>
+                    <div className="project-invitation-copy"><Mail size={16} /><span><b>دسترسی کارفرما</b><small>{hasSentInvite ? `دعوت برای ${ownerName} در ${new Date(invitation.lastSentAt).toLocaleDateString('fa-IR')} ارسال شده است.` : 'نام و ایمیل کارفرما را ثبت کنید، سپس لینک اختصاصی را ارسال کنید.'}</small></span></div>
+                    {editorOpen ? <div className="project-invitation-actions"><input type="text" value={ownerNameDrafts[p.id] ?? p.snapshot?._project?.target?.ownerName ?? ''} onChange={(e) => setOwnerNameDrafts({ ...ownerNameDrafts, [p.id]: e.target.value })} placeholder="نام کارفرما" aria-label="نام کارفرما" /><input type="email" value={ownerEmailDrafts[p.id] ?? ownerEmail} onChange={(e) => setOwnerEmailDrafts({ ...ownerEmailDrafts, [p.id]: e.target.value })} placeholder="owner@company.com" dir="ltr" aria-label="ایمیل کارفرما" /><button type="button" className="invite-save" onClick={() => handleSaveOwnerEmail(p.id)} disabled={emailSaveBusy === p.id}>{emailSaveBusy === p.id ? 'در حال ذخیره' : 'ذخیره'}</button><button type="button" className="invite-send" onClick={() => handleSendInvite(p.id)} disabled={inviteBusy === p.id || emailSaveBusy === p.id || hasUnsavedInvitationChange || !ownerEmail} title={hasUnsavedInvitationChange ? 'ابتدا ایمیل جدید را ذخیره کنید.' : undefined}><Send size={14} />{inviteBusy === p.id ? 'در حال ارسال' : 'ارسال دعوت'}</button></div> : <button type="button" className="invite-edit" onClick={() => setInvitationEditors((items) => ({ ...items, [p.id]: true }))}><Pencil size={14} />ویرایش یا ارسال مجدد</button>}
+                  </section>
                 </article>
-              ))}
+              })}
             </div>
           ) : (
             <div className="projects-empty">
@@ -404,6 +484,8 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
               داده می‌شود.
             </div>
           )}
+          {inviteMessage && <div className="connection-success">✓ {inviteMessage}</div>}
+          {inviteError && <div className="settings-model-error">✕ {inviteError}</div>}
         </section>
         <IndustryExplorer
           hidden
@@ -659,7 +741,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
             <span className="text-white font-semibold">{t.form.target}</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {['linkedin', 'tiktok', 'pinterest', 'twitter', 'telegram'].map(
+            {['linkedin', 'youtube', 'reddit', 'twitter', 'telegram'].map(
               (channel) => (
                 <input
                   key={channel}
@@ -668,7 +750,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   onChange={(e) =>
                     setTarget({ ...target, [channel]: e.target.value })
                   }
-                  placeholder={`${channel === 'linkedin' ? 'LinkedIn Business' : channel === 'tiktok' ? 'TikTok Business' : channel === 'pinterest' ? 'Pinterest Business' : channel === 'twitter' ? 'Twitter / X' : 'Telegram'} URL`}
+                  placeholder={`${channel === 'linkedin' ? 'LinkedIn Business' : channel === 'youtube' ? 'YouTube Channel' : channel === 'reddit' ? 'Reddit profile / subreddit' : channel === 'twitter' ? 'Twitter / X' : 'Telegram'} URL`}
                   className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm"
                   dir="ltr"
                 />
@@ -677,6 +759,33 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                نام کارفرما
+              </label>
+              <input
+                type="text"
+                value={target.ownerName}
+                onChange={(e) => setTarget({ ...target, ownerName: e.target.value })}
+                placeholder="مثال: آقای احمدی"
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 placeholder-slate-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-2">
+                ایمیل کارفرما
+              </label>
+              <input
+                type="email"
+                value={target.ownerEmail}
+                onChange={(e) =>
+                  setTarget({ ...target, ownerEmail: e.target.value })
+                }
+                placeholder="owner@company.com"
+                className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 placeholder-slate-500 transition-colors"
+                dir="ltr"
+              />
+            </div>
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
                 نام کسب‌وکار <span className="text-red-400">*</span>
@@ -957,21 +1066,21 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 />
                 <input
                   type="url"
-                  value={comp.tiktok}
+                  value={comp.youtube}
                   onChange={(e) =>
-                    updateCompetitor(index, 'tiktok', e.target.value)
+                    updateCompetitor(index, 'youtube', e.target.value)
                   }
-                  placeholder="TikTok URL / handle"
+                  placeholder="YouTube channel URL"
                   className="w-full bg-slate-800/60 border border-slate-600/60 text-white rounded-lg px-3 py-2.5 text-sm"
                   dir="ltr"
                 />
                 <input
                   type="url"
-                  value={comp.pinterest}
+                  value={comp.reddit}
                   onChange={(e) =>
-                    updateCompetitor(index, 'pinterest', e.target.value)
+                    updateCompetitor(index, 'reddit', e.target.value)
                   }
-                  placeholder="Pinterest Business URL"
+                  placeholder="Reddit profile / subreddit URL"
                   className="w-full bg-slate-800/60 border border-slate-600/60 text-white rounded-lg px-3 py-2.5 text-sm"
                   dir="ltr"
                 />
