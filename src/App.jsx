@@ -21,6 +21,7 @@ import { collectAllPlatformData, collectTopicDiscoveryData } from './utils/platf
 import { loadResearchCacheFromKeys, saveResearchCache } from './utils/researchCache';
 import { enforceReportIntegrity } from './utils/reportIntegrity';
 import { useLanguage } from './i18n.jsx';
+import { loadAiSettings } from './utils/aiSettings';
 
 const STATE = { FORM: 'form', LOADING: 'loading', CPM_APPROVAL: 'cpm_approval', REPORT: 'report' };
 
@@ -242,7 +243,8 @@ export default function App() {
 
   const handleRefreshTopics = async (onProgress = () => {}, runtimeOverride = null) => {
     if (!reportData || !reportTarget) throw new Error('گزارش فعالی برای به‌روزرسانی وجود ندارد.');
-    const runtime = runtimeOverride || reportAiRuntime || { provider: 'gemini', config: { apiKey: import.meta.env.VITE_GEMINI_API_KEY || '', model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite' } };
+    const globalAi = loadAiSettings();
+    const runtime = runtimeOverride || reportAiRuntime || { provider: '9router', config: { model: globalAi.model, fallbackModels: globalAi.fallbackModels } };
     onProgress('ساخت عبارت‌های جست‌وجو از صنعت، مخاطب و خدمات گزارش...');
     const searchQueries = await generateTopicSearchQueries(runtime.provider, runtime.config, reportTarget, reportData, onProgress);
     onProgress('جست‌وجوی بازار در YouTube، LinkedIn و Reddit با Apify...');
@@ -282,16 +284,29 @@ export default function App() {
       }
       setReportData(repaired); setReportTarget(savedTarget); setIsMock(false); setAppState(STATE.REPORT);
       setCurrentProjectId(id);
-      setReportAiRuntime(null);
+      const globalAi = loadAiSettings();
+      setReportAiRuntime({ provider: '9router', config: { model: globalAi.model, fallbackModels: globalAi.fallbackModels } });
     }
   };
 
+  const globalAiRuntime = reportAiRuntime || (() => {
+    const settings = loadAiSettings();
+    return { provider: '9router', config: { model: settings.model, fallbackModels: settings.fallbackModels } };
+  })();
+  const dashboardTarget = reportTarget && {
+    ...reportTarget,
+    aiPolicy: {
+      primaryModel: globalAiRuntime.config.model,
+      fallbackModels: globalAiRuntime.config.fallbackModels,
+      strategy: 'ordered-failover',
+    },
+  };
   const app = appState === STATE.LOADING ? (
     <LoadingScreen currentStep={loadingStep} message={loadingMessage} error={loadingError} onUseMockData={handleUseMockFallback} language={language} />
   ) : appState === STATE.CPM_APPROVAL && pendingResearch ? (
     <CpmApproval model={pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
-    <ResearchDashboard data={reportData} target={reportTarget} isMock={isMock} onReset={handleReset} presentationAi={reportAiRuntime} onRefreshTopics={handleRefreshTopics} />
+    <ResearchDashboard data={reportData} target={dashboardTarget} isMock={isMock} onReset={handleReset} presentationAi={globalAiRuntime} onRefreshTopics={handleRefreshTopics} />
   ) : (
     <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
   );

@@ -3,12 +3,35 @@
  */
 import { validateCpmModel } from './cpm.js';
 
+const compactWebsiteData = (websiteData, textLimit, pageLimit, pageTextLimit) => {
+  if (!websiteData) return null;
+  return {
+    url: websiteData.url,
+    status: websiteData.status,
+    title: websiteData.title,
+    hasBooking: websiteData.hasBooking,
+    hasContact: websiteData.hasContact,
+    hasBlog: websiteData.hasBlog,
+    mobileMeta: websiteData.mobileMeta,
+    seo: websiteData.seo,
+    crawlStatus: websiteData.crawlStatus,
+    pagesCrawled: websiteData.pagesCrawled,
+    evidence: (websiteData.evidence || []).slice(0, pageLimit),
+    pages: (websiteData.pages || []).slice(0, pageLimit).map((page) => ({
+      url: page.url,
+      title: page.title,
+      text: String(page.text || '').slice(0, pageTextLimit),
+    })),
+    text: String(websiteData.text || '').slice(0, textLimit),
+  };
+};
+
 // ─── Prompt builder (shared) ─────────────────────────────────────────────────
 
 export function buildAnalysisPrompt(targetBusiness, competitors, profilesData) {
   const outputLanguage = targetBusiness.outputLanguage === 'en' ? 'English' : 'Persian';
   const compactPost = (post = {}) => ({ ownerUsername: post.ownerUsername || post.username || '', type: post.type || post.mediaType || (post.isVideo ? 'Video' : 'Image'), timestamp: post.timestamp || post.takenAt || '', caption: String(post.caption || post.text || '').slice(0, 700), likes: post.likesCount ?? post.likes ?? 0, comments: post.commentsCount ?? post.comments ?? 0, views: post.videoViewCount ?? post.videoPlayCount ?? post.views ?? 0, url: post.url || (post.shortCode ? `https://instagram.com/p/${post.shortCode}` : '') });
-  const compactBusiness = (business = {}) => ({ name: business.name, industry: business.industry, instagramHandle: business.instagramHandle, website: business.website, instagramData: business.instagramData, instagramSummary: business.instagramSummary, instagramPosts: (business.instagramPosts || []).slice(0, 20).map(compactPost), websiteData: business.websiteData ? { ...business.websiteData, text: String(business.websiteData.text || '').slice(0, 5000) } : null });
+  const compactBusiness = (business = {}) => ({ name: business.name, industry: business.industry, instagramHandle: business.instagramHandle, website: business.website, instagramData: business.instagramData, instagramSummary: business.instagramSummary, instagramPosts: (business.instagramPosts || []).slice(0, 20).map(compactPost), websiteData: compactWebsiteData(business.websiteData, 12000, 6, 1800) });
   const dataJson = JSON.stringify({ target: compactBusiness(profilesData.target), competitors: (profilesData.competitors || []).map(compactBusiness) });
 
   return `You are a senior market research strategist. Produce the complete report in ${outputLanguage}. Every qualitative field, label, recommendation, explanation, and user-facing text must be written in ${outputLanguage}; do not mix languages. Based on the raw data below, create a deep, professional market research report.
@@ -178,7 +201,7 @@ const compactForChunks = (business = {}) => ({
     comments: post.commentsCount ?? post.comments ?? 0, views: post.videoViewCount ?? post.views ?? 0,
     url: post.url || (post.shortCode ? `https://instagram.com/p/${post.shortCode}` : ''),
   })),
-  websiteData: business.websiteData ? { ...business.websiteData, text: String(business.websiteData.text || '').slice(0, 2500) } : null,
+  websiteData: compactWebsiteData(business.websiteData, 7000, 4, 1400),
   platformData: business.platformData || null,
 });
 
@@ -446,24 +469,15 @@ async function requestAiProxy(payload) {
 }
 
 export async function testAiConnection(provider, config = {}) {
-  if (provider === '9router') {
-    if (!config.model) throw new Error('ابتدا یک مدل یا Combo از 9Router انتخاب کنید.');
-    const { res, data } = await requestAiProxy({
-      provider: '9router',
-      model: config.model,
-      prompt: 'فقط این کلمه را به صورت JSON معتبر برگردان: {"status":"ok"}',
-    });
-    if (!res.ok) throw new Error(data?.error?.message || data?.error || `خطای 9Router: ${res.status}`);
-    return { ok: true, provider, model: config.model };
-  }
+  if (!config.model) throw new Error('ابتدا یک مدل اصلی از 9Router انتخاب کنید.');
   const { res, data } = await requestAiProxy({
-    provider: 'gemini',
+    provider: '9router',
     model: config.model,
-    apiKey: config.apiKey,
+    fallbackModels: config.fallbackModels || [],
     prompt: 'فقط این کلمه را به صورت JSON معتبر برگردان: {"status":"ok"}',
   });
-  if (!res.ok) throw new Error(data?.error?.message || data?.error || `خطای Gemini: ${res.status}`);
-  return { ok: true, provider: 'gemini', model: config.model };
+  if (!res.ok) throw new Error(data?.error?.message || data?.error || `خطای 9Router: ${res.status}`);
+  return { ok: true, provider: '9router', model: data?._routerDiagnostic?.selectedModel || config.model };
 }
 
 /**
@@ -562,8 +576,8 @@ export async function analyzeWithOpenRouter(
   });
 }
 
-export async function analyzeWith9Router(prompt, model) {
-  const { res, data } = await requestAiProxy({ provider: '9router', model, prompt });
+export async function analyzeWith9Router(prompt, model, fallbackModels = []) {
+  const { res, data } = await requestAiProxy({ provider: '9router', model, fallbackModels, prompt });
   if (!res.ok) {
     const details = [data.stage && `مرحله: ${data.stage}`, data.requestId && `شناسه: ${data.requestId}`, data.upstreamStatus && `upstream: ${data.upstreamStatus}`].filter(Boolean).join(' · ');
     throw new Error(`${data.error?.message || data.error || `خطای 9Router: ${res.status}`}${details ? ` (${details})` : ''}`);
@@ -598,16 +612,8 @@ export async function analyzeWith9Router(prompt, model) {
  * @param {string} prompt
  */
 export async function analyzeWithAI(provider, config, prompt) {
-  if (provider === 'gemini') {
-    return analyzeWithGemini(config.apiKey, prompt, config.model);
-  }
-  if (provider === '9router') return analyzeWith9Router(prompt, config.model);
-  return analyzeWithOpenRouter(
-    config.apiKey,
-    prompt,
-    config.model,
-    config.endpoint,
-  );
+  if (provider !== '9router') throw new Error('تنها Provider فعال این پروژه 9Router است.');
+  return analyzeWith9Router(prompt, config.model, config.fallbackModels || []);
 }
 
 const presentationText = (value, limit = 1800) => String(value || '').trim().slice(0, limit);

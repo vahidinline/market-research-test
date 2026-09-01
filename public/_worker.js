@@ -51,7 +51,10 @@ async function apify(request, env) {
     return json({ error: 'Unknown action' }, 400);
   }
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
-  const { actorId, input, apiToken, limit = 500 } = await request.json();
+  const { actorId: requestedActorId, mode, input, apiToken, limit = 500 } = await request.json();
+  const actorId = mode === 'website' ? env.APIFY_WEBSITE_ACTOR : requestedActorId;
+  if (mode === 'website' && !actorId)
+    return json({ error: 'APIFY_WEBSITE_ACTOR is not configured in Cloudflare.' }, 503);
   const resolvedToken = token || apiToken;
   if (!resolvedToken)
     return json({ error: 'Apify API key is not configured.' }, 503);
@@ -392,12 +395,7 @@ async function ai(request, env) {
       return json({
         ok: true,
         service: 'ai-proxy',
-        providers: {
-          nineRouter: Boolean(nineRouterKey),
-          gemini: Boolean(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
-        },
-        geminiModel:
-          env.GEMINI_MODEL || env.VITE_GEMINI_MODEL || 'not-configured',
+        providers: { nineRouter: Boolean(nineRouterKey) },
       });
     if (!nineRouterKey)
       return json(
@@ -441,81 +439,16 @@ async function ai(request, env) {
     return json({ models: Array.isArray(body.data) ? body.data : [] });
   }
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
-  const { provider, model, prompt, apiKey } = await request.json();
+  const { provider = '9router', model, fallbackModels = [], prompt } = await request.json();
   log('request_start', {
     provider,
     model,
     promptBytes: new TextEncoder().encode(prompt || '').length,
   });
-  if (!['gemini', '9router'].includes(provider))
-    return json({ error: 'Unsupported AI provider' }, 400);
+  if (provider !== '9router')
+    return json({ error: '9Router is the only configured AI provider.' }, 400);
   if (!prompt || typeof prompt !== 'string')
     return json({ error: 'Prompt is required.' }, 400);
-  if (provider === 'gemini') {
-    const geminiKey = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || apiKey;
-    // Production configuration must win over the model baked into an older
-    // frontend build. The previous order kept forcing retired Gemini models.
-    const geminiModel = env.GEMINI_MODEL || env.VITE_GEMINI_MODEL || model;
-    if (!geminiModel)
-      return json(
-        {
-          error:
-            'Gemini model is not configured. Set GEMINI_MODEL in Cloudflare Pages.',
-          requestId,
-        },
-        503,
-      );
-    if (!geminiKey)
-      return json(
-        {
-          error:
-            'Gemini API key is not configured. Set GEMINI_API_KEY in .dev.vars or Cloudflare secrets.',
-        },
-        503,
-      );
-    let response;
-    try {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(geminiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `شما یک تحلیلگر بازار حرفه‌ای هستید که فقط JSON معتبر برمی‌گردانید.\n\n${prompt}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 16384,
-              responseMimeType: 'application/json',
-            },
-          }),
-        },
-      );
-    } catch (error) {
-      return json(
-        { error: `Gemini upstream connection failed: ${error.message}` },
-        502,
-      );
-    }
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok)
-      return json(
-        {
-          error:
-            body.error?.message ||
-            `Gemini upstream failed (${response.status})`,
-        },
-        response.status >= 400 && response.status < 600 ? response.status : 502,
-      );
-    return json(body);
-  }
   if (!nineRouterKey)
     return json(
       {
@@ -532,9 +465,23 @@ async function ai(request, env) {
       },
       400,
     );
-  let response;
-  try {
-    response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+  const candidates = [model, ...(Array.isArray(fallbackModels) ? fallbackModels : [])]
+    .map((item) => String(item || '').trim())
+    .filter((item, index, list) => item && item !== 'auto' && list.indexOf(item) === index)
+    .slice(0, 3);
+  const attempts = [];
+  const canFailover = (status) => [408, 429, 500, 502, 503, 504].includes(status);
+  const hasValidJsonContent = (body) => {
+    const raw = body?.choices?.[0]?.message?.content ?? body?.choices?.[0]?.text ?? body?.output_text ?? body?.content;
+    const text = Array.isArray(raw) ? raw.map((part) => typeof part === 'string' ? part : part?.text || part?.content || '').join('') : String(raw || '');
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    const candidate = cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
+    try { JSON.parse(candidate || cleaned); return true; } catch { return false; }
+  };
+  for (const candidate of candidates) {
+    let response;
+    try {
+      response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -542,7 +489,7 @@ async function ai(request, env) {
         'X-9Router-Token-Saver': 'off',
       },
       body: JSON.stringify({
-        model,
+        model: candidate,
         stream: false,
         messages: [
           {
@@ -557,27 +504,16 @@ async function ai(request, env) {
         // timeout. Chunk prompts are intentionally compact, so 7000 is enough.
         max_tokens: 7000,
       }),
-    });
-  } catch (error) {
-    log('upstream_network_error', { provider, model, message: error.message });
-    const timedOut =
-      error?.name === 'AbortError' ||
-      /timeout|aborted/i.test(error?.message || '');
-    return json(
-      {
-        error: timedOut
-          ? 'مدل انتخاب‌شده در ۸۵ ثانیه پاسخ نداد. یک مدل سریع‌تر انتخاب کنید یا دوباره تلاش کنید.'
-          : `اتصال Worker به 9Router قطع شد: ${error.message}`,
-        stage: 'chat_completions',
-        requestId,
-      },
-      timedOut ? 504 : 502,
-    );
-  }
-  const rawBody = await response.text();
+      });
+    } catch (error) {
+      log('upstream_network_error', { provider, model: candidate, message: error.message });
+      attempts.push({ model: candidate, status: 504, reason: error.message || 'network_error' });
+      continue;
+    }
+    const rawBody = await response.text();
   log('upstream_response', {
     provider,
-    model,
+    model: candidate,
     status: response.status,
     contentType: response.headers.get('content-type'),
     bodyBytes: new TextEncoder().encode(rawBody).length,
@@ -619,20 +555,17 @@ async function ai(request, env) {
         }
       : { rawResponseType: response.headers.get('content-type') || 'non-json' };
   }
-  if (!response.ok)
-    return json(
-      {
-        error:
-          body.error?.message ||
-          body.message ||
-          `9Router upstream failed (${response.status})`,
-        stage: 'chat_completions',
-        requestId,
-        upstreamStatus: response.status,
-      },
-      response.status >= 400 && response.status < 600 ? response.status : 502,
-    );
-  return json({
+    if (!response.ok) {
+      const message = body.error?.message || body.message || `9Router upstream failed (${response.status})`;
+      attempts.push({ model: candidate, status: response.status, reason: message });
+      if (canFailover(response.status)) continue;
+      return json({ error: message, stage: 'chat_completions', requestId, upstreamStatus: response.status, attempts }, response.status);
+    }
+    if (!hasValidJsonContent(body)) {
+      attempts.push({ model: candidate, status: 502, reason: 'invalid_json_response' });
+      continue;
+    }
+    return json({
     ...body,
     _routerDiagnostic: {
       status: response.status,
@@ -642,8 +575,16 @@ async function ai(request, env) {
       usage: body.usage || null,
       responseKeys: Object.keys(body),
       requestId,
+      selectedModel: candidate,
+      attempts,
     },
   });
+  }
+  const last = attempts[attempts.length - 1] || {};
+  return json({
+    error: 'هیچ‌یک از مدل‌های انتخاب‌شده در دسترس نبودند.',
+    stage: 'chat_completions', requestId, upstreamStatus: last.status || 502, attempts,
+  }, last.status || 502);
 }
 
 export default {

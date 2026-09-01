@@ -72,7 +72,7 @@ Four Recharts scatter maps compare:
 - Tailwind CSS 4
 - Recharts
 - Lucide React
-- Gemini or OpenRouter for AI analysis
+- 9Router for AI analysis
 - Apify for Instagram profile collection
 - pnpm for package management
 
@@ -83,7 +83,7 @@ Four Recharts scatter maps compare:
 - Node.js 20 or newer
 - pnpm 9 or newer
 - An Apify API token for live Instagram data
-- A Gemini API key or OpenRouter API key for AI analysis
+- A 9Router API key for AI analysis
 
 ### Installation
 
@@ -105,12 +105,15 @@ Example configuration:
 
 ```env
 VITE_APIFY_API_KEY=your_apify_token
-VITE_GEMINI_MODEL=gemini-3.5-flash-lite
 
 # Optional Apify Actor IDs for additional public platforms
 VITE_APIFY_YOUTUBE_ACTOR=
 VITE_APIFY_LINKEDIN_ACTOR=
 VITE_APIFY_REDDIT_ACTOR=
+
+# Server-side only: crawl website pages with rendered JavaScript when needed.
+# Put this in Cloudflare Pages Secrets (or .dev.vars locally), not .env.local.
+APIFY_WEBSITE_ACTOR=apify/website-content-crawler
 
 # Demo/client-side gate only — not production authentication
 VITE_AUTH_EMAIL=your-email@example.com
@@ -119,14 +122,12 @@ VITE_AUTH_PASSWORD=change-this-password
 
 Never commit `.env.local` or real credentials to a public repository.
 
-For the optional OpenAI-compatible 9Router provider, keep credentials in the
-Cloudflare Pages Function environment (not in a `VITE_*` variable):
+Keep the required OpenAI-compatible 9Router credentials in the Cloudflare Pages
+Function environment (not in a `VITE_*` variable):
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.5-flash-lite
 NINE_ROUTER_API_KEY=your_9router_api_key
-NINE_ROUTER_BASE_URL=https://router.example.com/v1
+NINE_ROUTER_BASE_URL=https://router.vahidafshari.com/v1
 ```
 
 For local Pages development, place these values in the git-ignored `.dev.vars`
@@ -139,7 +140,7 @@ pnpm dev
 ```
 
 Open `http://localhost:5173`. This command builds the frontend and starts the
-Cloudflare worker routes used by Gemini, 9Router, Apify, projects, and website
+Cloudflare worker routes used by 9Router, Apify, projects, and website
 inspection. Use `pnpm dev:frontend` only for frontend-only work that does not
 call these API routes. `pnpm dev:fullstack` remains an alias for `pnpm dev`.
 
@@ -161,10 +162,9 @@ pnpm lint
 
 ## AI providers
 
-The application supports two analysis providers:
-
-- Google Gemini, proxied through `/api/ai` and configured with the server-side `GEMINI_API_KEY` secret and `VITE_GEMINI_MODEL`
-- OpenRouter, supported by the shared AI utility and provider configuration
+The application uses 9Router exclusively. Each project stores its primary model
+and up to two ordered fallback models. The server tries the next model only for
+temporary failures such as rate limits, timeouts, or upstream 5xx errors.
 
 The prompt requests a structured JSON response containing the complete research schema. The response parser also handles fenced JSON, surrounding text, and common trailing-comma errors. If an AI response fails, the app retries the AI request using the already-fetched data rather than making another Apify request.
 

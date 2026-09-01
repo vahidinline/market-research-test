@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ExternalLink, Printer, Info, Presentation, X, LoaderCircle, Download } from 'lucide-react';
-import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  ArrowRight,
+  ExternalLink,
+  Printer,
+  Info,
+  Presentation,
+  X,
+  LoaderCircle,
+  Download,
+} from 'lucide-react';
+import {
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { buildCpmPositioningMaps } from '../utils/cpm.js';
 import { generatePresentationPlan } from '../utils/ai.js';
 import { downloadInteroperableReport } from '../utils/projects.js';
@@ -9,81 +27,1719 @@ import './presentation.css';
 import { useLanguage } from '../i18n.jsx';
 
 const TABS = [
-  ['industry','صنعت و بازار'],['directory','رقبا در یک نگاه'],['competitors','پرونده رقبا'],
-  ['comparison','تحلیل تطبیقی'],['swot','SWOT'],['topics','موضوعات پرتکرار'],['cpm','CPM مفصل'],['maps','نقشه جایگاه'],['strategy','پیشنهادات'],['sources','منابع'],
+  ['industry', 'صنعت و بازار'],
+  ['directory', 'رقبا در یک نگاه'],
+  ['competitors', 'پرونده رقبا'],
+  ['comparison', 'تحلیل تطبیقی'],
+  ['swot', 'SWOT'],
+  ['topics', 'موضوعات پرتکرار'],
+  ['cpm', 'CPM مفصل'],
+  ['maps', 'نقشه جایگاه'],
+  ['strategy', 'پیشنهادات'],
+  ['sources', 'منابع'],
 ];
 const FACTORS = {
-  instagramBreakdown: ['Instagram','visualQuality','creativity','scriptTopic','captions','storytelling','bio','highlights','layout','engagementRate'],
-  websiteBreakdown: ['Website','ux','deviceCompatibility','seo','serviceCategorization','onlineBooking','liveSupport'],
-  credibilityBreakdown: ['اعتماد و اعتبار','physicalStore','digitalPresence','influencerCollabs','yearsExperience'],
-  servicesBreakdown: ['محصول و خدمات','productDiversity','customization','accessories','additionalServices'],
+  instagramBreakdown: [
+    'Instagram',
+    'visualQuality',
+    'creativity',
+    'scriptTopic',
+    'captions',
+    'storytelling',
+    'bio',
+    'highlights',
+    'layout',
+    'engagementRate',
+  ],
+  websiteBreakdown: [
+    'Website',
+    'ux',
+    'deviceCompatibility',
+    'seo',
+    'serviceCategorization',
+    'onlineBooking',
+    'liveSupport',
+  ],
+  credibilityBreakdown: [
+    'اعتماد و اعتبار',
+    'physicalStore',
+    'digitalPresence',
+    'influencerCollabs',
+    'yearsExperience',
+  ],
+  servicesBreakdown: [
+    'محصول و خدمات',
+    'productDiversity',
+    'customization',
+    'accessories',
+    'additionalServices',
+  ],
 };
-const LABELS = {visualQuality:'کیفیت بصری',creativity:'خلاقیت',scriptTopic:'سناریو و موضوع',captions:'کپشن',storytelling:'داستان‌گویی',bio:'بیو',highlights:'هایلایت',layout:'چیدمان',engagementRate:'نرخ تعامل',ux:'تجربه کاربری',deviceCompatibility:'سازگاری موبایل',seo:'سئو',serviceCategorization:'دسته‌بندی خدمات',onlineBooking:'رزرو آنلاین',liveSupport:'پشتیبانی زنده',physicalStore:'مکان فیزیکی',digitalPresence:'حضور دیجیتال',influencerCollabs:'همکاری تبلیغاتی',yearsExperience:'سابقه',productDiversity:'تنوع محصول',customization:'شخصی‌سازی',accessories:'محصول مکمل',additionalServices:'خدمات تکمیلی'};
-const n = (value) => value == null ? '—' : Number(value) >= 1000 ? `${(Number(value)/1000).toFixed(1)}K` : value;
-const score100 = (value) => { if (value == null || value === '') return null; const numeric = Number(value); if (!Number.isFinite(numeric)) return null; return numeric <= 10 ? numeric * 10 : Math.min(100, numeric); };
-const arr = (value) => Array.isArray(value) ? value : [];
-const date = (value) => { if(!value) return '—'; const parsed=new Date(value); return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat('fa-IR',{year:'numeric',month:'long',day:'numeric'}).format(parsed); };
-const state = (value, yes, no) => value == null ? 'نامشخص' : value ? yes : no;
+const LABELS = {
+  visualQuality: 'کیفیت بصری',
+  creativity: 'خلاقیت',
+  scriptTopic: 'سناریو و موضوع',
+  captions: 'کپشن',
+  storytelling: 'داستان‌گویی',
+  bio: 'بیو',
+  highlights: 'هایلایت',
+  layout: 'چیدمان',
+  engagementRate: 'نرخ تعامل',
+  ux: 'تجربه کاربری',
+  deviceCompatibility: 'سازگاری موبایل',
+  seo: 'سئو',
+  serviceCategorization: 'دسته‌بندی خدمات',
+  onlineBooking: 'رزرو آنلاین',
+  liveSupport: 'پشتیبانی زنده',
+  physicalStore: 'مکان فیزیکی',
+  digitalPresence: 'حضور دیجیتال',
+  influencerCollabs: 'همکاری تبلیغاتی',
+  yearsExperience: 'سابقه',
+  productDiversity: 'تنوع محصول',
+  customization: 'شخصی‌سازی',
+  accessories: 'محصول مکمل',
+  additionalServices: 'خدمات تکمیلی',
+};
+const n = (value) =>
+  value == null
+    ? '—'
+    : Number(value) >= 1000
+      ? `${(Number(value) / 1000).toFixed(1)}K`
+      : value;
+const score100 = (value) => {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric <= 10 ? numeric * 10 : Math.min(100, numeric);
+};
+const arr = (value) => (Array.isArray(value) ? value : []);
+const date = (value) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : new Intl.DateTimeFormat('fa-IR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }).format(parsed);
+};
+const state = (value, yes, no) => (value == null ? 'نامشخص' : value ? yes : no);
 
-function Panel({title,kicker,children,className='',info}) { return <section className={`rd-panel ${className}`}><header><span>{kicker}</span><h2>{title}{info&&<button className="rd-info" title={info} aria-label={info}><Info size={14}/></button>}</h2></header>{children}</section>; }
-function Empty({children='داده‌ای برای این بخش دریافت نشده است.'}) { return <p className="rd-empty">{children}</p>; }
-function Link({href,children}) { if(!href) return null; const url=href.startsWith('http')?href:`https://${href}`; return <a href={url} target="_blank" rel="noreferrer">{children}<ExternalLink size={12}/></a>; }
-function ScoreBar({label,value}) { const score=Math.max(0,Math.min(10,Number(value)||0)); return <div className="rd-score"><span>{label}</span><i><b style={{width:`${score*10}%`}}/></i><strong>{score}</strong></div>; }
-function UnitScore({label,value}) { const score=value==null?null:Math.max(0,Math.min(1,Number(value)||0)); return <div className="rd-score rd-score-unit"><span>{label}</span><i><b style={{width:`${(score||0)*100}%`}}/></i><strong>{score==null?'—':score.toFixed(2)}</strong></div>; }
-function PercentBar({label,value}) { const percent=Math.max(0,Math.min(100,Number(value)||0)); return <div className="rd-score"><span>{LABELS[label]||({photos:'عکس',videos:'ویدئو',carousels:'کاروسل'}[label])||label}</span><i><b style={{width:`${percent}%`}}/></i><strong>{percent}%</strong></div>; }
+function Panel({ title, kicker, children, className = '', info }) {
+  return (
+    <section className={`rd-panel ${className}`}>
+      <header>
+        <span>{kicker}</span>
+        <h2>
+          {title}
+          {info && (
+            <button className="rd-info" title={info} aria-label={info}>
+              <Info size={14} />
+            </button>
+          )}
+        </h2>
+      </header>
+      {children}
+    </section>
+  );
+}
+function Empty({ children = 'داده‌ای برای این بخش دریافت نشده است.' }) {
+  return <p className="rd-empty">{children}</p>;
+}
+function Link({ href, children }) {
+  if (!href) return null;
+  const url = href.startsWith('http') ? href : `https://${href}`;
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      {children}
+      <ExternalLink size={12} />
+    </a>
+  );
+}
+function ScoreBar({ label, value }) {
+  const score = Math.max(0, Math.min(10, Number(value) || 0));
+  return (
+    <div className="rd-score">
+      <span>{label}</span>
+      <i>
+        <b style={{ width: `${score * 10}%` }} />
+      </i>
+      <strong>{score}</strong>
+    </div>
+  );
+}
+function UnitScore({ label, value }) {
+  const score =
+    value == null ? null : Math.max(0, Math.min(1, Number(value) || 0));
+  return (
+    <div className="rd-score rd-score-unit">
+      <span>{label}</span>
+      <i>
+        <b style={{ width: `${(score || 0) * 100}%` }} />
+      </i>
+      <strong>{score == null ? '—' : score.toFixed(2)}</strong>
+    </div>
+  );
+}
+function PercentBar({ label, value }) {
+  const percent = Math.max(0, Math.min(100, Number(value) || 0));
+  return (
+    <div className="rd-score">
+      <span>
+        {LABELS[label] ||
+          { photos: 'عکس', videos: 'ویدئو', carousels: 'کاروسل' }[label] ||
+          label}
+      </span>
+      <i>
+        <b style={{ width: `${percent}%` }} />
+      </i>
+      <strong>{percent}%</strong>
+    </div>
+  );
+}
 
-function Industry({data,target}) { const intel=target?.industryIntelligence; return <div className="rd-grid"><Panel className="rd-span-2" kicker="MARKET DEFINITION" title={`نمای کلی ${target?.industry||'صنعت'}`}><p className="rd-lead">{intel?.intro||data.industryOverview||'تحلیل صنعت در دسترس نیست.'}</p>{intel?.industryDefinition&&<p className="rd-narrative">{intel.industryDefinition}</p>}</Panel><Panel kicker="MARKET SEGMENTS" title="بخش‌های اصلی بازار"><div className="rd-segments">{arr(intel?.subindustries).map((x,i)=><div key={x.name}><span>{i+1}. {x.name}</span><small>{x.description}</small></div>)}</div></Panel><Panel kicker="TARGET POSITION" title="جایگاه بیزینس هدف"><p className="rd-lead">{intel?.targetPlacement?.subindustry||'نامشخص'}</p><p>{intel?.targetPlacement?.reason||'شواهد کافی برای جایگاه‌یابی ثبت نشده است.'}</p></Panel>{intel?.targetSubindustryBrief&&<Panel className="rd-span-2" kicker="TARGET SECTION DEEP DIVE" title={intel.targetSubindustryBrief.name}><p className="rd-lead">{intel.targetSubindustryBrief.overview}</p><div className="rd-factor-overviews">{arr(intel.targetSubindustryBrief.businessModels).map((model)=><article key={model.name}><span>{model.name}</span><p>{model.description}</p><small>{model.exampleCount||0}/{model.minimumExamples||10} نمونه · {model.evidenceStatus||'partial'}</small></article>)}</div></Panel>}</div>; }
+function Industry({ data, target }) {
+  const intel = target?.industryIntelligence;
+  return (
+    <div className="rd-grid">
+      <Panel
+        className="rd-span-2"
+        kicker="MARKET DEFINITION"
+        title={`نمای کلی ${target?.industry || 'صنعت'}`}>
+        <p className="rd-lead">
+          {intel?.intro || data.industryOverview || 'تحلیل صنعت در دسترس نیست.'}
+        </p>
+        {intel?.industryDefinition && (
+          <p className="rd-narrative">{intel.industryDefinition}</p>
+        )}
+      </Panel>
+      <Panel kicker="MARKET SEGMENTS" title="بخش‌های اصلی بازار">
+        <div className="rd-segments">
+          {arr(intel?.subindustries).map((x, i) => (
+            <div key={x.name}>
+              <span>
+                {i + 1}. {x.name}
+              </span>
+              <small>{x.description}</small>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel kicker="TARGET POSITION" title="جایگاه بیزینس هدف">
+        <p className="rd-lead">
+          {intel?.targetPlacement?.subindustry || 'نامشخص'}
+        </p>
+        <p>
+          {intel?.targetPlacement?.reason ||
+            'شواهد کافی برای جایگاه‌یابی ثبت نشده است.'}
+        </p>
+      </Panel>
+      {intel?.targetSubindustryBrief && (
+        <Panel
+          className="rd-span-2"
+          kicker="TARGET SECTION DEEP DIVE"
+          title={intel.targetSubindustryBrief.name}>
+          <p className="rd-lead">{intel.targetSubindustryBrief.overview}</p>
+          <div className="rd-factor-overviews">
+            {arr(intel.targetSubindustryBrief.businessModels).map((model) => (
+              <article key={model.name}>
+                <span>{model.name}</span>
+                <p>{model.description}</p>
+                <small>
+                  {model.exampleCount || 0}/{model.minimumExamples || 10} نمونه
+                  · {model.evidenceStatus || 'partial'}
+                </small>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      )}
+    </div>
+  );
+}
 
-function Directory({data}) { const list=data.competitorAnalysis?.length?data.competitorAnalysis:data.competitorList; return <Panel kicker="COMPETITIVE LANDSCAPE" title="رقبا در یک نگاه"><div className="rd-table"><table><thead><tr><th>برند</th><th>موقعیت</th><th>Instagram</th><th>Website</th><th>مخاطب</th><th>امتیاز</th></tr></thead><tbody>{arr(list).map((c,i)=><tr key={`${c.name||'competitor'}-${i}`}><td><b>{c.name}</b></td><td>{c.location||'—'}</td><td><Link href={`https://instagram.com/${String(c.instagramHandle||'').replace('@','')}`}>{c.instagramHandle||'—'}</Link></td><td><Link href={c.website}>{c.website||'—'}</Link></td><td>{n(c.followers??c.instagramAnalytics?.followers)}</td><td>{score100(c.overallScore)==null?'—':score100(c.overallScore)}/100</td></tr>)}</tbody></table></div></Panel>; }
-function SeoReport({comp}) { const seo=comp?.websiteAnalytics?.seo; if(!seo) return <Panel kicker="SEO AUDIT" title="ممیزی سئو" info="ممیزی از HTML قابل دسترس سایت انجام می‌شود؛ داده Off-page بدون منبع تخصصی محاسبه نمی‌شود."><Empty>برای این سایت داده HTML دریافت نشده و ممیزی سئو انجام نشده است.</Empty></Panel>; const checks=seo.checks||{}; return <Panel kicker="SEO AUDIT · HTML EVIDENCE" title={`ممیزی سئو ${comp.name}`} info="امتیاز کلی از ۵۵٪ On-page و ۴۵٪ Technical محاسبه شده است. Off-page فعلاً منبع داده ندارد."><div className="seo-summary"><div><span>کلی</span><strong>{seo.overall}/100</strong></div><div><span>On-page</span><strong>{seo.onPage}/100</strong></div><div><span>Technical</span><strong>{seo.technical}/100</strong></div><div><span>Off-page</span><strong>نامشخص</strong></div></div><div className="seo-checks">{[['title','Title'],['description','Meta description'],['h1','H1'],['canonical','Canonical'],['schema','Schema'],['https','HTTPS'],['robots','robots.txt'],['sitemap','sitemap.xml']].map(([key,label])=><span key={key}>{label}: {checks[key]===true||((key==='h1')&&checks[key]===1)?'✓':'—'}</span>)}</div></Panel>; }
-function Competitor({comp,index}) { const ig=comp.instagramAnalytics||{}; const web=comp.websiteAnalytics||{}; const verifiedFirst=ig.firstPostStatus==='verified'?ig.firstPost:null; return <article className="rd-competitor"><div className="rd-competitor-head"><span>{comp.isTarget?'T':String(index).padStart(2,'0')}</span><div><small>{comp.isTarget?'TARGET BUSINESS PROFILE':'COMPETITOR PROFILE'}</small><h2>{comp.name}</h2><p>{comp.bio||comp.description||comp.location||'اطلاعات معرفی در دسترس نیست.'}</p></div><strong>{comp.overallScore??'—'}<small>/10</small></strong></div><div className="rd-grid"><Panel kicker="BUSINESS MODEL" title="مدل کسب‌وکار و خدمات"><div className="rd-tags">{arr(comp.services).map(x=><span key={x}>{x}</span>)}</div><h3>اقدامات بازاریابی و برندینگ</h3><ul>{arr(comp.marketingActions).map(x=><li key={x}>{x}</li>)}</ul></Panel><Panel kicker="INSTAGRAM SNAPSHOT · APIFY" title="شاخص‌های قطعی نمونه"><dl className="rd-dl"><div><dt>اولین پست کل پیج</dt><dd>{verifiedFirst?date(verifiedFirst):'جمع‌آوری نشده'}</dd></div><div><dt>قدیمی‌ترین پست نمونه</dt><dd>{date(ig.oldestSampledPost)}</dd></div><div><dt>جدیدترین پست نمونه</dt><dd>{date(ig.lastPost)}</dd></div><div><dt>پست بررسی‌شده</dt><dd>{ig.postsAnalyzed??'—'}</dd></div><div><dt>کل پست‌های پیج</dt><dd>{ig.totalPosts??comp.posts??'—'}</dd></div><div><dt>فالوور</dt><dd>{n(ig.followers??comp.followers)}</dd></div><div><dt>نرخ تعامل نمونه</dt><dd>{ig.engagementRate==null?'نامشخص':`${ig.engagementRate}%`}</dd></div></dl><p className="rd-empty">تاریخ قدیمی‌ترین پست نمونه، تاریخ ایجاد یا اولین پست پیج نیست.</p></Panel><Panel className="rd-span-2" kicker="CONTENT AUDIT · SAMPLE" title="تحلیل محتوای Instagram"><div className="rd-analysis">{Object.entries(ig.contentAnalysis||{}).map(([key,value])=><div key={key}><b>{LABELS[key]||key}</b><p>{value}</p></div>)}</div>{!Object.keys(ig.contentAnalysis||{}).length&&<Empty/>}<div className="rd-format">{Object.entries(ig.mediaDistribution||{}).map(([key,value])=><PercentBar key={key} label={key} value={value}/>)}</div>{ig.bestContent?.link&&<div className="rd-best"><span>محتوای برتر در نمونه بررسی‌شده</span><b>{ig.bestContent.title}</b><Link href={ig.bestContent.link}>مشاهده پست</Link></div>}</Panel><Panel className="rd-span-2" kicker="WEBSITE AUDIT" title="تحلیل Website"><div className="rd-web"><div><span>UX</span><strong>{web.uxScore==null?'نامشخص':`${web.uxScore}/10`}</strong></div><div><span>Mobile</span><strong>{state(web.mobileFriendly,'مناسب','نیازمند بهبود')}</strong></div><div><span>SEO</span><strong>{web.seoStatus||'نامشخص'}</strong></div><div><span>رزرو آنلاین</span><strong>{state(web.onlineBooking,'فعال','غیرفعال')}</strong></div><div><span>پشتیبانی</span><strong>{state(web.liveSupport,'فعال','غیرفعال')}</strong></div></div>{web.narrative&&<p className="rd-narrative" style={{marginTop:'16px',fontSize:'0.9rem',lineHeight:'1.6',color:'#b2c3c7'}}>{web.narrative}</p>}</Panel></div></article>; }
-
-function Comparison({data}) { const items=[...(data.targetAnalysis?[data.targetAnalysis]:[]),...arr(data.competitorAnalysis)]; const factors=data.cpmModel?.factors||[]; const rows=arr(data.cpmMatrix?.rows); return <div className="rd-grid"><Panel kicker="BENCHMARK" title="مقایسه نقاط قوت"><div className="rd-compare">{items.map(c=><div key={c.name}><h3>{c.name}{c.isTarget?' · هدف':''}</h3>{arr(c.strengths).map(x=><p key={x}>+ {x}</p>)}</div>)}</div></Panel><Panel kicker="MARKET GAPS" title="شکاف‌ها و نقاط ضعف"><div className="rd-compare">{items.map(c=><div key={c.name}><h3>{c.name}{c.isTarget?' · هدف':''}</h3>{arr(c.weaknesses).map(x=><p key={x}>− {x}</p>)}</div>)}</div></Panel>{factors.length>0&&<Panel className="rd-span-2" kicker="FACTOR GAP ANALYSIS" title="شکاف عملکردی در همه فاکتورها"><p className="rd-cpm-note">این جدول شکاف بیزینس هدف را در برابر بهترین رقیب هر فاکتور نشان می‌دهد؛ مقایسه فقط به وب‌سایت و سوشال محدود نیست.</p><div className="rd-table"><table><thead><tr><th>فاکتور</th><th>هدف</th><th>بهترین رقیب</th><th>شکاف</th><th>برداشت</th></tr></thead><tbody>{factors.map((factor)=>{const targetRow=rows.find((row)=>row.isTarget);const targetScore=targetRow?.factorScores?.[factor.id]?.score;const competitorScores=rows.filter((row)=>!row.isTarget).map((row)=>row.factorScores?.[factor.id]?.score).filter((score)=>score!=null);const best=competitorScores.length?Math.max(...competitorScores):null;const gap=targetScore==null||best==null?null:targetScore-best;return <tr key={factor.id}><td><b>{factor.label}</b></td><td>{targetScore==null?'—':targetScore.toFixed(2)}</td><td>{best==null?'—':best.toFixed(2)}</td><td className={gap!=null&&gap<0?'gap-negative':''}>{gap==null?'—':`${gap>0?'+':''}${gap.toFixed(2)}`}</td><td>{gap==null?'داده ناکافی':gap<-.1?'نیازمند اقدام':gap>.1?'مزیت رقابتی':'نزدیک به رقبا'}</td></tr>})}</tbody></table></div></Panel>}</div>; }
-function Swot({data}) { return <div className="rd-swot">{[['strengths','نقاط قوت'],['weaknesses','نقاط ضعف'],['opportunities','فرصت‌ها'],['threats','تهدیدها']].map(([key,title],i)=><Panel key={key} kicker={['S','W','O','T'][i]} title={title}>{arr(data.swot?.[key]).map(x=><p key={x}>{x}</p>)}</Panel>)}</div>; }
-function LegacyCpm({data}) { return <><Panel kicker="WEIGHTED RESULT" title="جدول امتیازات نهایی"><div className="rd-table"><table><thead><tr><th>برند</th><th>Instagram</th><th>Website</th><th>اعتبار</th><th>محصول</th><th>مجموع</th></tr></thead><tbody>{arr(data.cpmMatrix?.rows).map(r=><tr key={r.name} className={r.isTarget?'is-target':''}><td><b>{r.name}</b></td><td>{r.instagram}</td><td>{r.website}</td><td>{r.credibility}</td><td>{r.services}</td><td><b>{r.total}</b></td></tr>)}</tbody></table></div></Panel><div className="rd-cpm-cards">{arr(data.cpmMatrix?.rows).map(row=><Panel key={row.name} kicker={row.isTarget?'TARGET BRAND':'COMPETITOR'} title={row.name}>{Object.entries(FACTORS).map(([group,items])=><div className="rd-factor" key={group}><h3>{items[0]}</h3>{items.slice(1).map(key=><ScoreBar key={key} label={LABELS[key]} value={row[group]?.[key]}/>)}</div>)}</Panel>)}</div></>; }
-function DynamicCpm({data}) {
-  const model=data.cpmModel; const rows=arr(data.cpmMatrix?.rows);
-  return <>
-    <Panel kicker="APPROVED METHODOLOGY" title="مدل کارشناسی تأییدشده">
-      <p className="rd-cpm-note">{model.rationale}</p>
-      <div className="rd-cpm-model-grid">{model.factors.map(factor=><article key={factor.id}><div><b>{factor.label}</b><strong>{Math.round(Number(factor.weight)*100)}٪</strong></div><p>{factor.weightRationale||factor.reason}</p><small>اطمینان: {factor.confidence==='high'?'بالا':factor.confidence==='low'?'پایین':'متوسط'}</small></article>)}</div>
-      <p className="rd-cpm-lock">نسخه {model.version} · قفل‌شده برای تمام رقبا · {model.operatorEdited?'اصلاح‌شده و تأییدشده توسط اپراتور':'تأییدشده توسط اپراتور'}</p>
+function Directory({ data }) {
+  const list = data.competitorAnalysis?.length
+    ? data.competitorAnalysis
+    : data.competitorList;
+  return (
+    <Panel kicker="COMPETITIVE LANDSCAPE" title="رقبا در یک نگاه">
+      <div className="rd-table">
+        <table>
+          <thead>
+            <tr>
+              <th>برند</th>
+              <th>موقعیت</th>
+              <th>Instagram</th>
+              <th>Website</th>
+              <th>مخاطب</th>
+              <th>امتیاز</th>
+            </tr>
+          </thead>
+          <tbody>
+            {arr(list).map((c, i) => (
+              <tr key={`${c.name || 'competitor'}-${i}`}>
+                <td>
+                  <b>{c.name}</b>
+                </td>
+                <td>{c.location || '—'}</td>
+                <td>
+                  <Link
+                    href={`https://instagram.com/${String(c.instagramHandle || '').replace('@', '')}`}>
+                    {c.instagramHandle || '—'}
+                  </Link>
+                </td>
+                <td>
+                  <Link href={c.website}>{c.website || '—'}</Link>
+                </td>
+                <td>{n(c.followers ?? c.instagramAnalytics?.followers)}</td>
+                <td>
+                  {score100(c.overallScore) == null
+                    ? '—'
+                    : score100(c.overallScore)}
+                  /100
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Panel>
-    <Panel kicker="PROJECT-SPECIFIC CPM · LOCKED" title="جدول امتیازات نرمال‌شده و وزنی"><p className="rd-cpm-note">محاسبات با دقت کامل انجام شده‌اند؛ نمایش امتیازها در بازه صفر تا یک است.</p><div className="rd-table"><table><thead><tr><th>برند</th>{model.factors.map(f=><th key={f.id}>{f.label}<small className="rd-cpm-weight">وزن {Math.round(Number(f.weight)*100)}٪</small></th>)}<th>CPM وزنی</th></tr></thead><tbody>{rows.map(row=><tr key={row.name} className={row.isTarget?'is-target':''}><td><b>{row.name}</b></td>{model.factors.map(f=><td key={f.id}>{row.factorScores?.[f.id]?.score==null?'—':row.factorScores[f.id].score.toFixed(2)}</td>)}<td><b>{row.total==null?'—':row.total.toFixed(2)}</b></td></tr>)}</tbody></table></div></Panel>
-    <div className="rd-cpm-cards">{rows.map(row=><Panel key={row.name} kicker={row.isTarget?'TARGET BRAND':'COMPETITOR'} title={row.name}>{model.factors.map(factor=><div className="rd-factor" key={factor.id}><h3>{factor.label} <small>وزن {Math.round(Number(factor.weight)*100)}٪ · {row.factorScores?.[factor.id]?.score==null?'—':row.factorScores[factor.id].score.toFixed(2)}</small></h3>{factor.dependentVariables.map(dependent=>{const dependentResult=row.factorScores?.[factor.id]?.dependentScores?.[dependent.id];return <div className="rd-cpm-dependent" key={dependent.id}><div><b>{dependent.label} <small>({Math.round(Number(dependent.weight)*100)}٪)</small></b><strong>{dependentResult?.score==null?'—':dependentResult.score.toFixed(2)}</strong></div>{dependent.independentVariables.map(criterion=>{const result=dependentResult?.independentScores?.[criterion.id];return <div className="rd-cpm-criterion" key={criterion.id}><UnitScore label={`${criterion.label} · ${Math.round(Number(criterion.weight)*100)}٪`} value={result?.normalizedScore}/><small>{result?.rawScore==null?'داده ناکافی':`${result.rawScore} از ${criterion.scoring.max}`}</small>{result?.evidence&&<p>{result.evidence}</p>}</div>})}</div>})}</div>)}</Panel>)}</div>
-  </>;
+  );
 }
-function FactorOverviews({data}) { const labels={social:'سوشال',website:'وب‌سایت',product_service:'محصول / خدمت',industry_specific:'عوامل ویژه صنعت'}; const items=Object.entries(data.factorOverviews||{}); if(!items.length)return null; return <Panel kicker="QUALITATIVE READOUT" title="مقدمه کیفی فاکتورهای رقابتی"><p className="rd-cpm-note">این جمع‌بندی بعد از تحلیل امتیازها و شواهد هر فاکتور ساخته شده است؛ اعداد در جدول پایین قابل مشاهده‌اند.</p><div className="rd-factor-overviews">{items.map(([key,value])=><article key={key}><span>{labels[key]||key}</span><p>{value}</p></article>)}</div></Panel>; }
-function Cpm({data}) { return data.cpmModel?<><FactorOverviews data={data}/><DynamicCpm data={data}/></>:<LegacyCpm data={data}/>; }
-function Maps({data}) {
-  const targetName=arr(data.cpmMatrix?.rows).find((row)=>row.isTarget)?.name;
-  const maps=data.cpmModel?buildCpmPositioningMaps(data.cpmModel,data.cpmMatrix):arr(data.positioningMaps);
-  return <div className="rd-maps">{maps.map((map,i)=>{
-    const points=arr(map.data).map((point)=>({...point,isTarget:Boolean(point.isTarget||point.name===targetName)})); const targetPoints=points.filter((point)=>point.isTarget); const competitorPoints=points.filter((point)=>!point.isTarget);
-    const domain=map.domain||[0,10]; const midpoint=map.midpoint??5; const isCpmMap=map.source==='cpm_factor_scores';
-    return <Panel key={map.title||i} kicker={isCpmMap?'CPM POSITIONING MAP':'POSITIONING MAP'} title={map.title||`نقشه ${i+1}`}><div className="rd-map-legend"><span><i className="target"/>برند هدف</span><span><i className="competitor"/>رقبا</span></div><ResponsiveContainer width="100%" height={310}><ScatterChart margin={{top:14,right:20,bottom:20,left:0}}><CartesianGrid stroke="#2b3c43" strokeDasharray="3 3"/><XAxis type="number" dataKey="x" name={map.xAxis} domain={domain} tick={{fill:'#84969b'}} tickFormatter={(value)=>Number(value).toFixed(isCpmMap?1:0)}/><YAxis type="number" dataKey="y" name={map.yAxis} domain={domain} tick={{fill:'#84969b'}} tickFormatter={(value)=>Number(value).toFixed(isCpmMap?1:0)}/><ReferenceLine x={midpoint} stroke="#53656b"/><ReferenceLine y={midpoint} stroke="#53656b"/><Tooltip cursor={{stroke:'#70838a',strokeDasharray:'3 3'}} content={({active,payload})=>active&&payload?.[0]?<div className="rd-map-tooltip"><b>{payload[0].payload.name}</b><span>{payload[0].payload.isTarget?'برند هدف':'رقیب'}</span><small>{map.xAxis}: {Number(payload[0].payload.x).toFixed(isCpmMap?2:0)} · {map.yAxis}: {Number(payload[0].payload.y).toFixed(isCpmMap?2:0)}</small></div>:null}/><Scatter name="رقبا" data={competitorPoints} fill="#58c6bd" shape="circle"/><Scatter name="برند هدف" data={targetPoints} fill="#f2b35f" shape="diamond"/></ScatterChart></ResponsiveContainer><p>{map.xAxis} × {map.yAxis}{isCpmMap?' · استخراج مستقیم از CPM تأییدشده':''}</p>{points.length>0&&<div className="rd-map-table rd-table"><table><thead><tr><th>برند</th><th>{map.xAxis} (X)</th><th>{map.yAxis} (Y)</th><th>نوع</th></tr></thead><tbody>{points.map((point,index)=><tr key={`${point.name||'brand'}-${index}`} className={point.isTarget?'is-target':''}><td><b>{point.name||'—'}</b></td><td>{Number(point.x).toFixed(isCpmMap?2:0)}</td><td>{Number(point.y).toFixed(isCpmMap?2:0)}</td><td>{point.isTarget?'برند هدف':'رقیب'}</td></tr>)}</tbody></table></div>}{!points.length&&<Empty>برای این دو فاکتور امتیاز مشترک کافی وجود ندارد.</Empty>}</Panel>})}</div>;
+function SeoReport({ comp }) {
+  const seo = comp?.websiteAnalytics?.seo;
+  if (!seo)
+    return (
+      <Panel
+        kicker="SEO AUDIT"
+        title="ممیزی سئو"
+        info="ممیزی از HTML قابل دسترس سایت انجام می‌شود؛ داده Off-page بدون منبع تخصصی محاسبه نمی‌شود.">
+        <Empty>
+          برای این سایت داده HTML دریافت نشده و ممیزی سئو انجام نشده است.
+        </Empty>
+      </Panel>
+    );
+  const checks = seo.checks || {};
+  return (
+    <Panel
+      kicker="SEO AUDIT · HTML EVIDENCE"
+      title={`ممیزی سئو ${comp.name}`}
+      info="امتیاز کلی از ۵۵٪ On-page و ۴۵٪ Technical محاسبه شده است. Off-page فعلاً منبع داده ندارد.">
+      <div className="seo-summary">
+        <div>
+          <span>کلی</span>
+          <strong>{seo.overall}/100</strong>
+        </div>
+        <div>
+          <span>On-page</span>
+          <strong>{seo.onPage}/100</strong>
+        </div>
+        <div>
+          <span>Technical</span>
+          <strong>{seo.technical}/100</strong>
+        </div>
+        <div>
+          <span>Off-page</span>
+          <strong>نامشخص</strong>
+        </div>
+      </div>
+      <div className="seo-checks">
+        {[
+          ['title', 'Title'],
+          ['description', 'Meta description'],
+          ['h1', 'H1'],
+          ['canonical', 'Canonical'],
+          ['schema', 'Schema'],
+          ['https', 'HTTPS'],
+          ['robots', 'robots.txt'],
+          ['sitemap', 'sitemap.xml'],
+        ].map(([key, label]) => (
+          <span key={key}>
+            {label}:{' '}
+            {checks[key] === true || (key === 'h1' && checks[key] === 1)
+              ? '✓'
+              : '—'}
+          </span>
+        ))}
+      </div>
+    </Panel>
+  );
 }
-function Strategy({data}) { return <div className="rd-recs">{arr(data.recommendations).map((x,i)=><Panel key={x.title} kicker={`PRIORITY ${x.priority||i+1}`} title={x.title}><p>{x.description}</p>{x.actionSteps&&<ul>{arr(x.actionSteps).map(a=><li key={a}>{a}</li>)}</ul>}</Panel>)}</div>; }
-function AudienceTopics({data,onRefresh,busy,error,progress,provider,model,onProvider,onModel,models,modelsLoading,readOnly}) { const topics=arr(data.audienceTopics); return <Panel kicker="EVERGREEN DEMAND · 50 TOPICS" title="موضوعات پرتکرار و دغدغه‌محور مخاطب" info="Observed یعنی در داده‌های همین تحقیق شاهد مستقیم وجود دارد؛ Hypothesis باید اعتبارسنجی شود."><div className="rd-topic-ai">{!readOnly&&<><div><button type="button" className={provider==='gemini'?'active':''} onClick={()=>onProvider('gemini')} disabled={busy}>Gemini</button><button type="button" className={provider==='9router'?'active':''} onClick={()=>onProvider('9router')} disabled={busy}>9Router</button></div>{provider==='9router'&&models.length?<select value={model} onChange={(event)=>onModel(event.target.value)} disabled={busy}><option value="">انتخاب مدل</option>{models.map((item)=><option key={item.id} value={item.id}>{item.id}</option>)}</select>:<input dir="ltr" value={model} onChange={(event)=>onModel(event.target.value)} disabled={busy} placeholder={modelsLoading?'در حال دریافت مدل‌ها…':'نام مدل'}/>}<small>این انتخاب فقط برای تولید موضوعات همین گزارش استفاده می‌شود.</small></>}</div><div className="rd-topic-toolbar"><p className="rd-lead">این فهرست درباره موضوع محتواست، نه قالب، هوک یا شیوه اجرا. اولویت هر مورد از نشانه‌های تقاضای جست‌وجو، تکرار سؤال و استقبال موضوع‌محور ساخته شده است.</p>{!readOnly&&<button type="button" onClick={onRefresh} disabled={busy||!model.trim()}>{busy?<><LoaderCircle className="spin" size={16}/> در حال به‌روزرسانی…</>:topics.length?'به‌روزرسانی دوباره موضوعات':'دریافت موضوعات از Apify'}</button>}</div>{progress&&<p className="rd-topic-progress">{progress}</p>}{error&&<p className="presentation-error">{error}</p>}<div className="rd-topic-list">{topics.map((item,i)=><article className="rd-topic" key={`${item.rank||i}-${item.topic}`}><header><span>{String(item.rank||i+1).padStart(2,'0')}</span><div><small>{item.searchIntent||'—'} · {item.journeyStage||'—'}</small><h3>{item.topic}</h3></div><b className={`rd-topic-confidence ${item.confidence||'low'}`}>{item.validationStatus||'hypothesis'} · {item.confidence||'low'}</b></header><blockquote>{item.audienceQuestion}</blockquote><p><strong>دغدغه:</strong> {item.audienceConcern}</p><p><strong>چرا مهم است:</strong> {item.whyItMatters}</p><div className="rd-topic-angles">{arr(item.contentAngles).map((angle)=><span key={angle}>{angle}</span>)}</div><div className="rd-topic-signals">{arr(item.platformSignals).map((signal,index)=><span key={`${signal.platform}-${index}`} title={signal.evidence}>{signal.platform} · {signal.signalType}{signal.sourceUrl&&<> · <Link href={signal.sourceUrl}>شاهد</Link></>}</span>)}</div><details><summary>عبارت‌های اعتبارسنجی و دلیل ماندگاری</summary><p>{item.evergreenReason}</p><ul>{arr(item.suggestedQueries).map((query)=><li key={query}>{query}</li>)}</ul></details></article>)}</div>{!topics.length&&!busy&&<Empty>این گزارش قدیمی هنوز موضوع ندارد. مدل را انتخاب کنید و «دریافت موضوعات از Apify» را بزنید؛ سایر بخش‌ها تغییر نمی‌کنند.</Empty>}</Panel>; }
-function Sources({data}) { const links=new Set(); [...(data.targetAnalysis?[data.targetAnalysis]:[]),...arr(data.competitorAnalysis)].forEach(c=>{if(c.website)links.add(c.website);if(c.instagramHandle)links.add(`https://instagram.com/${String(c.instagramHandle).replace('@','')}`);if(c.instagramAnalytics?.bestContent?.link)links.add(c.instagramAnalytics.bestContent.link)}); return <Panel kicker="EVIDENCE REGISTER" title="منابع و شواهد"><ol className="rd-sources">{[...links].map(x=><li key={x}><Link href={x}>{x}</Link></li>)}</ol>{!links.size&&<Empty/>}</Panel>; }
+function Competitor({ comp, index }) {
+  const ig = comp.instagramAnalytics || {};
+  const web = comp.websiteAnalytics || {};
+  const verifiedFirst = ig.firstPostStatus === 'verified' ? ig.firstPost : null;
+  return (
+    <article className="rd-competitor">
+      <div className="rd-competitor-head">
+        <span>{comp.isTarget ? 'T' : String(index).padStart(2, '0')}</span>
+        <div>
+          <small>
+            {comp.isTarget ? 'TARGET BUSINESS PROFILE' : 'COMPETITOR PROFILE'}
+          </small>
+          <h2>{comp.name}</h2>
+          <p>
+            {comp.bio ||
+              comp.description ||
+              comp.location ||
+              'اطلاعات معرفی در دسترس نیست.'}
+          </p>
+        </div>
+        <strong>
+          {comp.overallScore ?? '—'}
+          <small>/10</small>
+        </strong>
+      </div>
+      <div className="rd-grid">
+        <Panel kicker="BUSINESS MODEL" title="مدل کسب‌وکار و خدمات">
+          <div className="rd-tags">
+            {arr(comp.services).map((x) => (
+              <span key={x}>{x}</span>
+            ))}
+          </div>
+          <h3>اقدامات بازاریابی و برندینگ</h3>
+          <ul>
+            {arr(comp.marketingActions).map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </Panel>
+        <Panel kicker="INSTAGRAM SNAPSHOT · APIFY" title="شاخص‌های قطعی نمونه">
+          <dl className="rd-dl">
+            <div>
+              <dt>اولین پست کل پیج</dt>
+              <dd>{verifiedFirst ? date(verifiedFirst) : 'جمع‌آوری نشده'}</dd>
+            </div>
+            <div>
+              <dt>قدیمی‌ترین پست نمونه</dt>
+              <dd>{date(ig.oldestSampledPost)}</dd>
+            </div>
+            <div>
+              <dt>جدیدترین پست نمونه</dt>
+              <dd>{date(ig.lastPost)}</dd>
+            </div>
+            <div>
+              <dt>پست بررسی‌شده</dt>
+              <dd>{ig.postsAnalyzed ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>کل پست‌های پیج</dt>
+              <dd>{ig.totalPosts ?? comp.posts ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>فالوور</dt>
+              <dd>{n(ig.followers ?? comp.followers)}</dd>
+            </div>
+            <div>
+              <dt>نرخ تعامل نمونه</dt>
+              <dd>
+                {ig.engagementRate == null ? 'نامشخص' : `${ig.engagementRate}%`}
+              </dd>
+            </div>
+          </dl>
+          <p className="rd-empty">
+            تاریخ قدیمی‌ترین پست نمونه، تاریخ ایجاد یا اولین پست پیج نیست.
+          </p>
+        </Panel>
+        <Panel
+          className="rd-span-2"
+          kicker="CONTENT AUDIT · SAMPLE"
+          title="تحلیل محتوای Instagram">
+          <div className="rd-analysis">
+            {Object.entries(ig.contentAnalysis || {}).map(([key, value]) => (
+              <div key={key}>
+                <b>{LABELS[key] || key}</b>
+                <p>{value}</p>
+              </div>
+            ))}
+          </div>
+          {!Object.keys(ig.contentAnalysis || {}).length && <Empty />}
+          <div className="rd-format">
+            {Object.entries(ig.mediaDistribution || {}).map(([key, value]) => (
+              <PercentBar key={key} label={key} value={value} />
+            ))}
+          </div>
+          {ig.bestContent?.link && (
+            <div className="rd-best">
+              <span>محتوای برتر در نمونه بررسی‌شده</span>
+              <b>{ig.bestContent.title}</b>
+              <Link href={ig.bestContent.link}>مشاهده پست</Link>
+            </div>
+          )}
+        </Panel>
+        <Panel
+          className="rd-span-2"
+          kicker="WEBSITE AUDIT"
+          title="تحلیل Website">
+          <div className="rd-web">
+            <div>
+              <span>UX</span>
+              <strong>
+                {web.uxScore == null ? 'نامشخص' : `${web.uxScore}/10`}
+              </strong>
+            </div>
+            <div>
+              <span>Mobile</span>
+              <strong>
+                {state(web.mobileFriendly, 'مناسب', 'نیازمند بهبود')}
+              </strong>
+            </div>
+            <div>
+              <span>SEO</span>
+              <strong>{web.seoStatus || 'نامشخص'}</strong>
+            </div>
+            <div>
+              <span>رزرو آنلاین</span>
+              <strong>{state(web.onlineBooking, 'فعال', 'غیرفعال')}</strong>
+            </div>
+            <div>
+              <span>پشتیبانی</span>
+              <strong>{state(web.liveSupport, 'فعال', 'غیرفعال')}</strong>
+            </div>
+          </div>
+          {web.narrative && (
+            <p
+              className="rd-narrative"
+              style={{
+                marginTop: '16px',
+                fontSize: '0.9rem',
+                lineHeight: '1.6',
+                color: '#b2c3c7',
+              }}>
+              {web.narrative}
+            </p>
+          )}
+        </Panel>
+      </div>
+    </article>
+  );
+}
 
-export default function ResearchDashboard({data,target,isMock,onReset,presentationAi,onRefreshTopics,readOnly=false}) {
+function Comparison({ data }) {
+  const items = [
+    ...(data.targetAnalysis ? [data.targetAnalysis] : []),
+    ...arr(data.competitorAnalysis),
+  ];
+  const factors = data.cpmModel?.factors || [];
+  const rows = arr(data.cpmMatrix?.rows);
+  return (
+    <div className="rd-grid">
+      <Panel kicker="BENCHMARK" title="مقایسه نقاط قوت">
+        <div className="rd-compare">
+          {items.map((c) => (
+            <div key={c.name}>
+              <h3>
+                {c.name}
+                {c.isTarget ? ' · هدف' : ''}
+              </h3>
+              {arr(c.strengths).map((x) => (
+                <p key={x}>+ {x}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel kicker="MARKET GAPS" title="شکاف‌ها و نقاط ضعف">
+        <div className="rd-compare">
+          {items.map((c) => (
+            <div key={c.name}>
+              <h3>
+                {c.name}
+                {c.isTarget ? ' · هدف' : ''}
+              </h3>
+              {arr(c.weaknesses).map((x) => (
+                <p key={x}>− {x}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Panel>
+      {factors.length > 0 && (
+        <Panel
+          className="rd-span-2"
+          kicker="FACTOR GAP ANALYSIS"
+          title="شکاف عملکردی در همه فاکتورها">
+          <p className="rd-cpm-note">
+            این جدول شکاف بیزینس هدف را در برابر بهترین رقیب هر فاکتور نشان
+            می‌دهد؛ مقایسه فقط به وب‌سایت و سوشال محدود نیست.
+          </p>
+          <div className="rd-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>فاکتور</th>
+                  <th>هدف</th>
+                  <th>بهترین رقیب</th>
+                  <th>شکاف</th>
+                  <th>برداشت</th>
+                </tr>
+              </thead>
+              <tbody>
+                {factors.map((factor) => {
+                  const targetRow = rows.find((row) => row.isTarget);
+                  const targetScore =
+                    targetRow?.factorScores?.[factor.id]?.score;
+                  const competitorScores = rows
+                    .filter((row) => !row.isTarget)
+                    .map((row) => row.factorScores?.[factor.id]?.score)
+                    .filter((score) => score != null);
+                  const best = competitorScores.length
+                    ? Math.max(...competitorScores)
+                    : null;
+                  const gap =
+                    targetScore == null || best == null
+                      ? null
+                      : targetScore - best;
+                  return (
+                    <tr key={factor.id}>
+                      <td>
+                        <b>{factor.label}</b>
+                      </td>
+                      <td>
+                        {targetScore == null ? '—' : targetScore.toFixed(2)}
+                      </td>
+                      <td>{best == null ? '—' : best.toFixed(2)}</td>
+                      <td
+                        className={
+                          gap != null && gap < 0 ? 'gap-negative' : ''
+                        }>
+                        {gap == null
+                          ? '—'
+                          : `${gap > 0 ? '+' : ''}${gap.toFixed(2)}`}
+                      </td>
+                      <td>
+                        {gap == null
+                          ? 'داده ناکافی'
+                          : gap < -0.1
+                            ? 'نیازمند اقدام'
+                            : gap > 0.1
+                              ? 'مزیت رقابتی'
+                              : 'نزدیک به رقبا'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+    </div>
+  );
+}
+function Swot({ data }) {
+  return (
+    <div className="rd-swot">
+      {[
+        ['strengths', 'نقاط قوت'],
+        ['weaknesses', 'نقاط ضعف'],
+        ['opportunities', 'فرصت‌ها'],
+        ['threats', 'تهدیدها'],
+      ].map(([key, title], i) => (
+        <Panel key={key} kicker={['S', 'W', 'O', 'T'][i]} title={title}>
+          {arr(data.swot?.[key]).map((x) => (
+            <p key={x}>{x}</p>
+          ))}
+        </Panel>
+      ))}
+    </div>
+  );
+}
+function LegacyCpm({ data }) {
+  return (
+    <>
+      <Panel kicker="WEIGHTED RESULT" title="جدول امتیازات نهایی">
+        <div className="rd-table">
+          <table>
+            <thead>
+              <tr>
+                <th>برند</th>
+                <th>Instagram</th>
+                <th>Website</th>
+                <th>اعتبار</th>
+                <th>محصول</th>
+                <th>مجموع</th>
+              </tr>
+            </thead>
+            <tbody>
+              {arr(data.cpmMatrix?.rows).map((r) => (
+                <tr key={r.name} className={r.isTarget ? 'is-target' : ''}>
+                  <td>
+                    <b>{r.name}</b>
+                  </td>
+                  <td>{r.instagram}</td>
+                  <td>{r.website}</td>
+                  <td>{r.credibility}</td>
+                  <td>{r.services}</td>
+                  <td>
+                    <b>{r.total}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+      <div className="rd-cpm-cards">
+        {arr(data.cpmMatrix?.rows).map((row) => (
+          <Panel
+            key={row.name}
+            kicker={row.isTarget ? 'TARGET BRAND' : 'COMPETITOR'}
+            title={row.name}>
+            {Object.entries(FACTORS).map(([group, items]) => (
+              <div className="rd-factor" key={group}>
+                <h3>{items[0]}</h3>
+                {items.slice(1).map((key) => (
+                  <ScoreBar
+                    key={key}
+                    label={LABELS[key]}
+                    value={row[group]?.[key]}
+                  />
+                ))}
+              </div>
+            ))}
+          </Panel>
+        ))}
+      </div>
+    </>
+  );
+}
+function DynamicCpm({ data }) {
+  const model = data.cpmModel;
+  const rows = arr(data.cpmMatrix?.rows);
+  return (
+    <>
+      <Panel kicker="APPROVED METHODOLOGY" title="مدل کارشناسی تأییدشده">
+        <p className="rd-cpm-note">{model.rationale}</p>
+        <div className="rd-cpm-model-grid">
+          {model.factors.map((factor) => (
+            <article key={factor.id}>
+              <div>
+                <b>{factor.label}</b>
+                <strong>{Math.round(Number(factor.weight) * 100)}٪</strong>
+              </div>
+              <p>{factor.weightRationale || factor.reason}</p>
+              <small>
+                اطمینان:{' '}
+                {factor.confidence === 'high'
+                  ? 'بالا'
+                  : factor.confidence === 'low'
+                    ? 'پایین'
+                    : 'متوسط'}
+              </small>
+            </article>
+          ))}
+        </div>
+        <p className="rd-cpm-lock">
+          نسخه {model.version} · قفل‌شده برای تمام رقبا ·{' '}
+          {model.operatorEdited
+            ? 'اصلاح‌شده و تأییدشده توسط اپراتور'
+            : 'تأییدشده توسط اپراتور'}
+        </p>
+      </Panel>
+      <Panel
+        kicker="PROJECT-SPECIFIC CPM · LOCKED"
+        title="جدول امتیازات نرمال‌شده و وزنی">
+        <p className="rd-cpm-note">
+          محاسبات با دقت کامل انجام شده‌اند؛ نمایش امتیازها در بازه صفر تا یک
+          است.
+        </p>
+        <div className="rd-table">
+          <table>
+            <thead>
+              <tr>
+                <th>برند</th>
+                {model.factors.map((f) => (
+                  <th key={f.id}>
+                    {f.label}
+                    <small className="rd-cpm-weight">
+                      وزن {Math.round(Number(f.weight) * 100)}٪
+                    </small>
+                  </th>
+                ))}
+                <th>CPM وزنی</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.name} className={row.isTarget ? 'is-target' : ''}>
+                  <td>
+                    <b>{row.name}</b>
+                  </td>
+                  {model.factors.map((f) => (
+                    <td key={f.id}>
+                      {row.factorScores?.[f.id]?.score == null
+                        ? '—'
+                        : row.factorScores[f.id].score.toFixed(2)}
+                    </td>
+                  ))}
+                  <td>
+                    <b>{row.total == null ? '—' : row.total.toFixed(2)}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+      <div className="rd-cpm-cards">
+        {rows.map((row) => (
+          <Panel
+            key={row.name}
+            kicker={row.isTarget ? 'TARGET BRAND' : 'COMPETITOR'}
+            title={row.name}>
+            {model.factors.map((factor) => (
+              <div className="rd-factor" key={factor.id}>
+                <h3>
+                  {factor.label}{' '}
+                  <small>
+                    وزن {Math.round(Number(factor.weight) * 100)}٪ ·{' '}
+                    {row.factorScores?.[factor.id]?.score == null
+                      ? '—'
+                      : row.factorScores[factor.id].score.toFixed(2)}
+                  </small>
+                </h3>
+                {factor.dependentVariables.map((dependent) => {
+                  const dependentResult =
+                    row.factorScores?.[factor.id]?.dependentScores?.[
+                      dependent.id
+                    ];
+                  return (
+                    <div className="rd-cpm-dependent" key={dependent.id}>
+                      <div>
+                        <b>
+                          {dependent.label}{' '}
+                          <small>
+                            ({Math.round(Number(dependent.weight) * 100)}٪)
+                          </small>
+                        </b>
+                        <strong>
+                          {dependentResult?.score == null
+                            ? '—'
+                            : dependentResult.score.toFixed(2)}
+                        </strong>
+                      </div>
+                      {dependent.independentVariables.map((criterion) => {
+                        const result =
+                          dependentResult?.independentScores?.[criterion.id];
+                        return (
+                          <div className="rd-cpm-criterion" key={criterion.id}>
+                            <UnitScore
+                              label={`${criterion.label} · ${Math.round(Number(criterion.weight) * 100)}٪`}
+                              value={result?.normalizedScore}
+                            />
+                            <small>
+                              {result?.rawScore == null
+                                ? 'داده ناکافی'
+                                : `${result.rawScore} از ${criterion.scoring.max}`}
+                            </small>
+                            {result?.evidence && <p>{result.evidence}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </Panel>
+        ))}
+      </div>
+    </>
+  );
+}
+function FactorOverviews({ data }) {
+  const labels = {
+    social: 'سوشال',
+    website: 'وب‌سایت',
+    product_service: 'محصول / خدمت',
+    industry_specific: 'عوامل ویژه صنعت',
+  };
+  const items = Object.entries(data.factorOverviews || {});
+  if (!items.length) return null;
+  return (
+    <Panel kicker="QUALITATIVE READOUT" title="مقدمه کیفی فاکتورهای رقابتی">
+      <p className="rd-cpm-note">
+        این جمع‌بندی بعد از تحلیل امتیازها و شواهد هر فاکتور ساخته شده است؛
+        اعداد در جدول پایین قابل مشاهده‌اند.
+      </p>
+      <div className="rd-factor-overviews">
+        {items.map(([key, value]) => (
+          <article key={key}>
+            <span>{labels[key] || key}</span>
+            <p>{value}</p>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+function Cpm({ data }) {
+  return data.cpmModel ? (
+    <>
+      <FactorOverviews data={data} />
+      <DynamicCpm data={data} />
+    </>
+  ) : (
+    <LegacyCpm data={data} />
+  );
+}
+function Maps({ data }) {
+  const targetName = arr(data.cpmMatrix?.rows).find(
+    (row) => row.isTarget,
+  )?.name;
+  const maps = data.cpmModel
+    ? buildCpmPositioningMaps(data.cpmModel, data.cpmMatrix)
+    : arr(data.positioningMaps);
+  return (
+    <div className="rd-maps">
+      {maps.map((map, i) => {
+        const points = arr(map.data).map((point) => ({
+          ...point,
+          isTarget: Boolean(point.isTarget || point.name === targetName),
+        }));
+        const targetPoints = points.filter((point) => point.isTarget);
+        const competitorPoints = points.filter((point) => !point.isTarget);
+        const domain = map.domain || [0, 10];
+        const midpoint = map.midpoint ?? 5;
+        const isCpmMap = map.source === 'cpm_factor_scores';
+        return (
+          <Panel
+            key={map.title || i}
+            kicker={isCpmMap ? 'CPM POSITIONING MAP' : 'POSITIONING MAP'}
+            title={map.title || `نقشه ${i + 1}`}>
+            <div className="rd-map-legend">
+              <span>
+                <i className="target" />
+                برند هدف
+              </span>
+              <span>
+                <i className="competitor" />
+                رقبا
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={310}>
+              <ScatterChart
+                margin={{ top: 14, right: 20, bottom: 20, left: 0 }}>
+                <CartesianGrid stroke="#2b3c43" strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  dataKey="x"
+                  name={map.xAxis}
+                  domain={domain}
+                  tick={{ fill: '#84969b' }}
+                  tickFormatter={(value) =>
+                    Number(value).toFixed(isCpmMap ? 1 : 0)
+                  }
+                />
+                <YAxis
+                  type="number"
+                  dataKey="y"
+                  name={map.yAxis}
+                  domain={domain}
+                  tick={{ fill: '#84969b' }}
+                  tickFormatter={(value) =>
+                    Number(value).toFixed(isCpmMap ? 1 : 0)
+                  }
+                />
+                <ReferenceLine x={midpoint} stroke="#53656b" />
+                <ReferenceLine y={midpoint} stroke="#53656b" />
+                <Tooltip
+                  cursor={{ stroke: '#70838a', strokeDasharray: '3 3' }}
+                  content={({ active, payload }) =>
+                    active && payload?.[0] ? (
+                      <div className="rd-map-tooltip">
+                        <b>{payload[0].payload.name}</b>
+                        <span>
+                          {payload[0].payload.isTarget ? 'برند هدف' : 'رقیب'}
+                        </span>
+                        <small>
+                          {map.xAxis}:{' '}
+                          {Number(payload[0].payload.x).toFixed(
+                            isCpmMap ? 2 : 0,
+                          )}{' '}
+                          · {map.yAxis}:{' '}
+                          {Number(payload[0].payload.y).toFixed(
+                            isCpmMap ? 2 : 0,
+                          )}
+                        </small>
+                      </div>
+                    ) : null
+                  }
+                />
+                <Scatter
+                  name="رقبا"
+                  data={competitorPoints}
+                  fill="#58c6bd"
+                  shape="circle"
+                />
+                <Scatter
+                  name="برند هدف"
+                  data={targetPoints}
+                  fill="#f2b35f"
+                  shape="diamond"
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+            <p>
+              {map.xAxis} × {map.yAxis}
+              {isCpmMap ? ' · استخراج مستقیم از CPM تأییدشده' : ''}
+            </p>
+            {points.length > 0 && (
+              <div className="rd-map-table rd-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>برند</th>
+                      <th>{map.xAxis} (X)</th>
+                      <th>{map.yAxis} (Y)</th>
+                      <th>نوع</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {points.map((point, index) => (
+                      <tr
+                        key={`${point.name || 'brand'}-${index}`}
+                        className={point.isTarget ? 'is-target' : ''}>
+                        <td>
+                          <b>{point.name || '—'}</b>
+                        </td>
+                        <td>{Number(point.x).toFixed(isCpmMap ? 2 : 0)}</td>
+                        <td>{Number(point.y).toFixed(isCpmMap ? 2 : 0)}</td>
+                        <td>{point.isTarget ? 'برند هدف' : 'رقیب'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!points.length && (
+              <Empty>برای این دو فاکتور امتیاز مشترک کافی وجود ندارد.</Empty>
+            )}
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+function Strategy({ data }) {
+  return (
+    <div className="rd-recs">
+      {arr(data.recommendations).map((x, i) => (
+        <Panel
+          key={x.title}
+          kicker={`PRIORITY ${x.priority || i + 1}`}
+          title={x.title}>
+          <p>{x.description}</p>
+          {x.actionSteps && (
+            <ul>
+              {arr(x.actionSteps).map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      ))}
+    </div>
+  );
+}
+function AudienceTopics({
+  data,
+  onRefresh,
+  busy,
+  error,
+  progress,
+  provider,
+  model,
+  onProvider,
+  onModel,
+  models,
+  modelsLoading,
+  readOnly,
+}) {
+  const topics = arr(data.audienceTopics);
+  return (
+    <Panel
+      kicker="EVERGREEN DEMAND · 50 TOPICS"
+      title="موضوعات پرتکرار و دغدغه‌محور مخاطب"
+      info="Observed یعنی در داده‌های همین تحقیق شاهد مستقیم وجود دارد؛ Hypothesis باید اعتبارسنجی شود.">
+      <div className="rd-topic-ai">
+        {!readOnly && (
+          <>
+            <div>
+              <button
+                type="button"
+                className={provider === 'gemini' ? 'active' : ''}
+                onClick={() => onProvider('gemini')}
+                disabled={busy}>
+                Gemini
+              </button>
+              <button
+                type="button"
+                className={provider === '9router' ? 'active' : ''}
+                onClick={() => onProvider('9router')}
+                disabled={busy}>
+                9Router
+              </button>
+            </div>
+            {provider === '9router' && models.length ? (
+              <select
+                value={model}
+                onChange={(event) => onModel(event.target.value)}
+                disabled={busy}>
+                <option value="">انتخاب مدل</option>
+                {models.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.id}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                dir="ltr"
+                value={model}
+                onChange={(event) => onModel(event.target.value)}
+                disabled={busy}
+                placeholder={
+                  modelsLoading ? 'در حال دریافت مدل‌ها…' : 'نام مدل'
+                }
+              />
+            )}
+            <small>
+              این انتخاب فقط برای تولید موضوعات همین گزارش استفاده می‌شود.
+            </small>
+          </>
+        )}
+      </div>
+      <div className="rd-topic-toolbar">
+        <p className="rd-lead">
+          این فهرست درباره موضوع محتواست، نه قالب، هوک یا شیوه اجرا. اولویت هر
+          مورد از نشانه‌های تقاضای جست‌وجو، تکرار سؤال و استقبال موضوع‌محور
+          ساخته شده است.
+        </p>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={busy || !model.trim()}>
+            {busy ? (
+              <>
+                <LoaderCircle className="spin" size={16} /> در حال به‌روزرسانی…
+              </>
+            ) : topics.length ? (
+              'به‌روزرسانی دوباره موضوعات'
+            ) : (
+              'دریافت موضوعات از Apify'
+            )}
+          </button>
+        )}
+      </div>
+      {progress && <p className="rd-topic-progress">{progress}</p>}
+      {error && <p className="presentation-error">{error}</p>}
+      <div className="rd-topic-list">
+        {topics.map((item, i) => (
+          <article className="rd-topic" key={`${item.rank || i}-${item.topic}`}>
+            <header>
+              <span>{String(item.rank || i + 1).padStart(2, '0')}</span>
+              <div>
+                <small>
+                  {item.searchIntent || '—'} · {item.journeyStage || '—'}
+                </small>
+                <h3>{item.topic}</h3>
+              </div>
+              <b className={`rd-topic-confidence ${item.confidence || 'low'}`}>
+                {item.validationStatus || 'hypothesis'} ·{' '}
+                {item.confidence || 'low'}
+              </b>
+            </header>
+            <blockquote>{item.audienceQuestion}</blockquote>
+            <p>
+              <strong>دغدغه:</strong> {item.audienceConcern}
+            </p>
+            <p>
+              <strong>چرا مهم است:</strong> {item.whyItMatters}
+            </p>
+            <div className="rd-topic-angles">
+              {arr(item.contentAngles).map((angle) => (
+                <span key={angle}>{angle}</span>
+              ))}
+            </div>
+            <div className="rd-topic-signals">
+              {arr(item.platformSignals).map((signal, index) => (
+                <span
+                  key={`${signal.platform}-${index}`}
+                  title={signal.evidence}>
+                  {signal.platform} · {signal.signalType}
+                  {signal.sourceUrl && (
+                    <>
+                      {' '}
+                      · <Link href={signal.sourceUrl}>شاهد</Link>
+                    </>
+                  )}
+                </span>
+              ))}
+            </div>
+            <details>
+              <summary>عبارت‌های اعتبارسنجی و دلیل ماندگاری</summary>
+              <p>{item.evergreenReason}</p>
+              <ul>
+                {arr(item.suggestedQueries).map((query) => (
+                  <li key={query}>{query}</li>
+                ))}
+              </ul>
+            </details>
+          </article>
+        ))}
+      </div>
+      {!topics.length && !busy && (
+        <Empty>
+          این گزارش قدیمی هنوز موضوع ندارد. «دریافت موضوعات از Apify» را بزنید؛
+          سایر بخش‌ها تغییر نمی‌کنند.
+        </Empty>
+      )}
+    </Panel>
+  );
+}
+function Sources({ data }) {
+  const links = new Set();
+  [
+    ...(data.targetAnalysis ? [data.targetAnalysis] : []),
+    ...arr(data.competitorAnalysis),
+  ].forEach((c) => {
+    if (c.website) links.add(c.website);
+    if (c.instagramHandle)
+      links.add(
+        `https://instagram.com/${String(c.instagramHandle).replace('@', '')}`,
+      );
+    if (c.instagramAnalytics?.bestContent?.link)
+      links.add(c.instagramAnalytics.bestContent.link);
+  });
+  return (
+    <Panel kicker="EVIDENCE REGISTER" title="منابع و شواهد">
+      <ol className="rd-sources">
+        {[...links].map((x) => (
+          <li key={x}>
+            <Link href={x}>{x}</Link>
+          </li>
+        ))}
+      </ol>
+      {!links.size && <Empty />}
+    </Panel>
+  );
+}
+
+export default function ResearchDashboard({
+  data,
+  target,
+  isMock,
+  onReset,
+  presentationAi,
+  onRefreshTopics,
+  readOnly = false,
+}) {
   const { t } = useLanguage();
   const localizedTabs = TABS.map(([id]) => [id, t.dashboard.tabs[id]]);
-  const [tab,setTab]=useState('industry'); const [selected,setSelected]=useState(0); const [printingAll,setPrintingAll]=useState(false);
-  const [presentationOpen,setPresentationOpen]=useState(false); const [presentationBusy,setPresentationBusy]=useState(false); const [presentationError,setPresentationError]=useState(''); const [presentationSuccess,setPresentationSuccess]=useState('');
-  const [presentationOptions,setPresentationOptions]=useState({audience:'مدیران و تصمیم‌گیرندگان کسب‌وکار',purpose:'تصمیم‌گیری درباره جایگاه رقابتی و اولویت‌های رشد',slideCount:16});
-  const [presentationProvider,setPresentationProvider]=useState(presentationAi?.provider||'gemini'); const [presentationModel,setPresentationModel]=useState(presentationAi?.config?.model||import.meta.env.VITE_GEMINI_MODEL||'gemini-3.5-flash-lite');
-  const [presentationModels,setPresentationModels]=useState([]); const [presentationModelsLoading,setPresentationModelsLoading]=useState(false); const [presentationModelsError,setPresentationModelsError]=useState('');
-  const [topicsBusy,setTopicsBusy]=useState(false); const [topicsError,setTopicsError]=useState(''); const [topicsProgress,setTopicsProgress]=useState('');
-  const [topicsProvider,setTopicsProvider]=useState(presentationAi?.provider||'gemini'); const [topicsModel,setTopicsModel]=useState(presentationAi?.config?.model||import.meta.env.VITE_GEMINI_MODEL||'gemini-3.5-flash-lite'); const [topicsModels,setTopicsModels]=useState([]); const [topicsModelsLoading,setTopicsModelsLoading]=useState(false);
-  const analyzedBusinesses=useMemo(()=>[...(data.targetAnalysis?[data.targetAnalysis]:[]),...arr(data.competitorAnalysis)],[data]);
-  const competitor=analyzedBusinesses[selected];
-  const refreshTopics=useCallback(async()=>{if(!onRefreshTopics||topicsBusy)return;setTopicsBusy(true);setTopicsError('');setTopicsProgress('آماده‌سازی جمع‌آوری مستقل موضوعات…');try{const runtime={provider:topicsProvider,config:topicsProvider==='gemini'?{apiKey:import.meta.env.VITE_GEMINI_API_KEY||'',model:topicsModel.trim()}:{model:topicsModel.trim()}};await onRefreshTopics(setTopicsProgress,runtime);setTopicsProgress('۵۰ موضوع ساخته و در همین پروژه ذخیره شد.')}catch(error){setTopicsError(error.message||'به‌روزرسانی موضوعات ناموفق بود.')}finally{setTopicsBusy(false)}},[onRefreshTopics,topicsBusy,topicsProvider,topicsModel]);
-  const sections=useMemo(()=>({industry:<Industry data={data} target={target}/>,directory:<Directory data={data}/>,competitors:<><div className="rd-subtabs">{analyzedBusinesses.map((c,i)=><button key={`${c.name||'business'}-${i}`} onClick={()=>setSelected(i)} className={selected===i?'active':''}>{c.isTarget?'هدف · ':''}{c.name}</button>)}</div>{competitor?<><Competitor comp={competitor} index={selected}/><SeoReport comp={competitor}/></>:<Empty/>}</>,comparison:<Comparison data={data}/>,swot:<Swot data={data}/>,topics:<AudienceTopics data={data} readOnly={readOnly} onRefresh={refreshTopics} busy={topicsBusy} error={topicsError} progress={topicsProgress} provider={topicsProvider} model={topicsModel} onProvider={(provider)=>{setTopicsProvider(provider);setTopicsModel(provider==='gemini'?(import.meta.env.VITE_GEMINI_MODEL||'gemini-3.5-flash-lite'):'')}} onModel={setTopicsModel} models={topicsModels} modelsLoading={topicsModelsLoading}/>,cpm:<Cpm data={data}/>,maps:<Maps data={data}/>,strategy:<Strategy data={data}/>,sources:<Sources data={data}/>}),[data,target,selected,competitor,analyzedBusinesses,topicsBusy,topicsError,topicsProgress,refreshTopics,topicsProvider,topicsModel,topicsModels,topicsModelsLoading,readOnly]);
-  useEffect(()=>{if(!presentationOpen||presentationProvider!=='9router')return;let active=true;setPresentationModelsLoading(true);setPresentationModelsError('');fetch('/api/ai?action=models',{cache:'no-store'}).then(async(response)=>{const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||`HTTP ${response.status}`);return body.models||[]}).then((models)=>{if(!active)return;const normalized=models.map((item)=>typeof item==='string'?{id:item}:item).filter((item)=>item.id);setPresentationModels(normalized);setPresentationModel((current)=>normalized.some((item)=>item.id===current)?current:(normalized[0]?.id||current))}).catch((error)=>{if(active)setPresentationModelsError(error.message||'دریافت مدل‌ها ناموفق بود؛ نام مدل را دستی وارد کنید.')}).finally(()=>{if(active)setPresentationModelsLoading(false)});return()=>{active=false}},[presentationOpen,presentationProvider]);
-  useEffect(()=>{if(topicsProvider!=='9router')return;let active=true;setTopicsModelsLoading(true);fetch('/api/ai?action=models',{cache:'no-store'}).then(async(response)=>{const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||`HTTP ${response.status}`);return body.models||[]}).then((models)=>{if(!active)return;const normalized=models.map((item)=>typeof item==='string'?{id:item}:item).filter((item)=>item.id);setTopicsModels(normalized);setTopicsModel((current)=>normalized.some((item)=>item.id===current)?current:(normalized[0]?.id||current))}).catch((error)=>{if(active)setTopicsError(`دریافت فهرست مدل‌ها ناموفق بود: ${error.message}`)}).finally(()=>{if(active)setTopicsModelsLoading(false)});return()=>{active=false}},[topicsProvider]);
-  const print=(all)=>{setPrintingAll(all);setTimeout(()=>window.print(),all?700:120)};
-  const makePresentation=async()=>{setPresentationBusy(true);setPresentationError('');setPresentationSuccess('');try{const runtime={provider:presentationProvider,config:presentationProvider==='gemini'?{apiKey:import.meta.env.VITE_GEMINI_API_KEY||'',model:presentationModel.trim()}:{model:presentationModel.trim()}};const plan=await generatePresentationPlan(runtime.provider,runtime.config,data,target,presentationOptions);const {exportPresentation}=await import('../utils/presentation.js');const output=await exportPresentation(plan,target);setPresentationSuccess(`${output.slideCount} اسلاید ساخته و فایل ${output.fileName} دانلود شد.`)}catch(error){setPresentationError(error.message||'ساخت پرزنتیشن ناموفق بود. مدل دیگری انتخاب کنید و دوباره تلاش کنید.')}finally{setPresentationBusy(false)}};
-  return <div className="rd" dir={document.documentElement.dir}><header className="rd-top"><button onClick={onReset}><ArrowRight size={16}/> {readOnly?'بازگشت':'پروژه‌ها'}</button><div><b>{target?.name||'گزارش تحقیق بازار'}</b><span>Market Research · v0.0.4 {isMock?'· DEMO':''} {readOnly?'· OWNER PANEL':''}</span></div><div>{!readOnly&&<><button onClick={()=>downloadInteroperableReport(data,target)}><Download size={15}/> خروجی JSON</button><button className="rd-presentation-trigger" onClick={()=>{setPresentationOpen(true);setPresentationError('');setPresentationSuccess('')}}><Presentation size={15}/> ساخت پرزنتیشن</button></>}<button onClick={()=>print(false)}><Printer size={15}/> صفحه جاری</button><button onClick={()=>print(true)}><Printer size={15}/> کل گزارش</button></div></header><nav className="rd-tabs">{localizedTabs.map(([id,label])=><button key={id} onClick={()=>{setPrintingAll(false);setTab(id)}} className={tab===id?'active':''}>{label}</button>)}</nav><main className="rd-main">{printingAll?localizedTabs.map(([id,label])=><section className="rd-print-section" key={id}><h1>{label}</h1>{sections[id]}</section>):sections[tab]}</main>{!readOnly&&presentationOpen&&<div className="presentation-modal-backdrop" onClick={()=>!presentationBusy&&setPresentationOpen(false)}><section className="presentation-modal" onClick={(event)=>event.stopPropagation()}><header><div><span>AI DECK STUDIO</span><h2>ساخت پرزنتیشن مدیریتی</h2></div><button type="button" onClick={()=>setPresentationOpen(false)} disabled={presentationBusy}><X size={20}/></button></header><p>هوش مصنوعی روایت ارائه، تیترها و Speaker Notes را از همین گزارش می‌سازد؛ خروجی PowerPoint کاملاً قابل‌ویرایش است.</p><div className="presentation-model-section"><div className="presentation-provider-tabs"><button type="button" className={presentationProvider==='gemini'?'active':''} onClick={()=>{setPresentationProvider('gemini');setPresentationModel(import.meta.env.VITE_GEMINI_MODEL||'gemini-3.5-flash-lite');setPresentationError('')}}>Google Gemini</button><button type="button" className={presentationProvider==='9router'?'active':''} onClick={()=>{setPresentationProvider('9router');setPresentationModel(presentationAi?.provider==='9router'?presentationAi.config?.model||'':'');setPresentationError('')}}>9Router</button></div><label>مدل تولیدکننده پرزنتیشن{presentationProvider==='9router'&&presentationModels.length?<select value={presentationModel} onChange={(event)=>setPresentationModel(event.target.value)}><option value="">یک مدل یا Combo انتخاب کنید</option>{presentationModels.map((item)=><option key={item.id} value={item.id}>{item.id}{item.owned_by?` · ${item.owned_by}`:''}</option>)}</select>:<input dir="ltr" value={presentationModel} onChange={(event)=>setPresentationModel(event.target.value)} placeholder={presentationModelsLoading?'در حال دریافت مدل‌ها…':'نام مدل یا Combo'}/>}</label>{presentationModelsLoading&&<small>در حال دریافت مدل‌های فعال 9Router…</small>}{presentationModelsError&&<small className="presentation-model-error">{presentationModelsError}</small>}<small>این انتخاب فقط برای ساخت همین پرزنتیشن استفاده می‌شود و مدل گزارش را تغییر نمی‌دهد.</small></div><label>مخاطب ارائه<input value={presentationOptions.audience} onChange={(event)=>setPresentationOptions({...presentationOptions,audience:event.target.value})}/></label><label>هدف ارائه<textarea rows="2" value={presentationOptions.purpose} onChange={(event)=>setPresentationOptions({...presentationOptions,purpose:event.target.value})}/></label><label>تعداد اسلاید <strong>{presentationOptions.slideCount}</strong><input type="range" min="10" max="22" value={presentationOptions.slideCount} onChange={(event)=>setPresentationOptions({...presentationOptions,purpose:event.target.value})}/></label><div className="presentation-formats"><span><b>PPTX</b> قابل‌ویرایش</span><span><b>Google Slides</b> آماده Import</span><span><b>Speaker Notes</b> همراه منابع</span></div>{presentationBusy&&<div className="presentation-status"><LoaderCircle className="spin" size={18}/><div><b>AI در حال طراحی روایت اسلایدهاست…</b><small>پس از ساخت محتوا، فایل PowerPoint خودکار دانلود می‌شود.</small></div></div>}{presentationError&&<p className="presentation-error">{presentationError}</p>}{presentationSuccess&&<p className="presentation-success">✓ {presentationSuccess}</p>}<footer><button type="button" onClick={()=>setPresentationOpen(false)} disabled={presentationBusy}>انصراف</button><button type="button" className="presentation-build" onClick={makePresentation} disabled={presentationBusy||!presentationModel.trim()||!presentationOptions.audience.trim()||!presentationOptions.purpose.trim()}>{presentationBusy?<><LoaderCircle className="spin" size={16}/> در حال ساخت…</>:<><Download size={16}/> ساخت و دانلود PPTX</>}</button></footer></section></div>}</div>;
+  const [tab, setTab] = useState('industry');
+  const [selected, setSelected] = useState(0);
+  const [printingAll, setPrintingAll] = useState(false);
+  const [presentationOpen, setPresentationOpen] = useState(false);
+  const [presentationBusy, setPresentationBusy] = useState(false);
+  const [presentationError, setPresentationError] = useState('');
+  const [presentationSuccess, setPresentationSuccess] = useState('');
+  const [presentationOptions, setPresentationOptions] = useState({
+    audience: 'مدیران و تصمیم‌گیرندگان کسب‌وکار',
+    purpose: 'تصمیم‌گیری درباره جایگاه رقابتی و اولویت‌های رشد',
+    slideCount: 16,
+  });
+  const [presentationProvider, setPresentationProvider] = useState('9router');
+  const [presentationModel, setPresentationModel] = useState(
+    presentationAi?.config?.model || target?.aiPolicy?.primaryModel || '',
+  );
+  const [presentationModels, setPresentationModels] = useState([]);
+  const [presentationModelsLoading, setPresentationModelsLoading] =
+    useState(false);
+  const [presentationModelsError, setPresentationModelsError] = useState('');
+  const [topicsBusy, setTopicsBusy] = useState(false);
+  const [topicsError, setTopicsError] = useState('');
+  const [topicsProgress, setTopicsProgress] = useState('');
+  const [topicsProvider, setTopicsProvider] = useState('9router');
+  const [topicsModel, setTopicsModel] = useState(
+    presentationAi?.config?.model || target?.aiPolicy?.primaryModel || '',
+  );
+  const [topicsModels, setTopicsModels] = useState([]);
+  const [topicsModelsLoading, setTopicsModelsLoading] = useState(false);
+  const analyzedBusinesses = useMemo(
+    () => [
+      ...(data.targetAnalysis ? [data.targetAnalysis] : []),
+      ...arr(data.competitorAnalysis),
+    ],
+    [data],
+  );
+  const competitor = analyzedBusinesses[selected];
+  const refreshTopics = useCallback(async () => {
+    if (!onRefreshTopics || topicsBusy) return;
+    setTopicsBusy(true);
+    setTopicsError('');
+    setTopicsProgress('آماده‌سازی جمع‌آوری مستقل موضوعات…');
+    try {
+      const runtime = {
+        provider: '9router',
+        config: {
+          model: topicsModel.trim(),
+          fallbackModels: target?.aiPolicy?.fallbackModels || [],
+        },
+      };
+      await onRefreshTopics(setTopicsProgress, runtime);
+      setTopicsProgress('۵۰ موضوع ساخته و در همین پروژه ذخیره شد.');
+    } catch (error) {
+      setTopicsError(error.message || 'به‌روزرسانی موضوعات ناموفق بود.');
+    } finally {
+      setTopicsBusy(false);
+    }
+  }, [onRefreshTopics, topicsBusy, topicsModel, target]);
+  const sections = useMemo(
+    () => ({
+      industry: <Industry data={data} target={target} />,
+      directory: <Directory data={data} />,
+      competitors: (
+        <>
+          <div className="rd-subtabs">
+            {analyzedBusinesses.map((c, i) => (
+              <button
+                key={`${c.name || 'business'}-${i}`}
+                onClick={() => setSelected(i)}
+                className={selected === i ? 'active' : ''}>
+                {c.isTarget ? 'هدف · ' : ''}
+                {c.name}
+              </button>
+            ))}
+          </div>
+          {competitor ? (
+            <>
+              <Competitor comp={competitor} index={selected} />
+              <SeoReport comp={competitor} />
+            </>
+          ) : (
+            <Empty />
+          )}
+        </>
+      ),
+      comparison: <Comparison data={data} />,
+      swot: <Swot data={data} />,
+      topics: (
+        <AudienceTopics
+          data={data}
+          readOnly={readOnly}
+          onRefresh={refreshTopics}
+          busy={topicsBusy}
+          error={topicsError}
+          progress={topicsProgress}
+          provider={topicsProvider}
+          model={topicsModel}
+          onProvider={(provider) => {
+            setTopicsProvider(provider);
+            setTopicsModel(
+              provider === 'gemini'
+                ? import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
+                : '',
+            );
+          }}
+          onModel={setTopicsModel}
+          models={topicsModels}
+          modelsLoading={topicsModelsLoading}
+        />
+      ),
+      cpm: <Cpm data={data} />,
+      maps: <Maps data={data} />,
+      strategy: <Strategy data={data} />,
+      sources: <Sources data={data} />,
+    }),
+    [
+      data,
+      target,
+      selected,
+      competitor,
+      analyzedBusinesses,
+      topicsBusy,
+      topicsError,
+      topicsProgress,
+      refreshTopics,
+      topicsProvider,
+      topicsModel,
+      topicsModels,
+      topicsModelsLoading,
+      readOnly,
+    ],
+  );
+  useEffect(() => {
+    if (!presentationOpen || presentationProvider !== '9router') return;
+    let active = true;
+    setPresentationModelsLoading(true);
+    setPresentationModelsError('');
+    fetch('/api/ai?action=models', { cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(body.error || `HTTP ${response.status}`);
+        return body.models || [];
+      })
+      .then((models) => {
+        if (!active) return;
+        const normalized = models
+          .map((item) => (typeof item === 'string' ? { id: item } : item))
+          .filter((item) => item.id);
+        setPresentationModels(normalized);
+        setPresentationModel((current) =>
+          normalized.some((item) => item.id === current)
+            ? current
+            : normalized[0]?.id || current,
+        );
+      })
+      .catch((error) => {
+        if (active)
+          setPresentationModelsError(
+            error.message ||
+              'دریافت مدل‌ها ناموفق بود؛ نام مدل را دستی وارد کنید.',
+          );
+      })
+      .finally(() => {
+        if (active) setPresentationModelsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [presentationOpen, presentationProvider]);
+  useEffect(() => {
+    if (topicsProvider !== '9router') return;
+    let active = true;
+    setTopicsModelsLoading(true);
+    fetch('/api/ai?action=models', { cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(body.error || `HTTP ${response.status}`);
+        return body.models || [];
+      })
+      .then((models) => {
+        if (!active) return;
+        const normalized = models
+          .map((item) => (typeof item === 'string' ? { id: item } : item))
+          .filter((item) => item.id);
+        setTopicsModels(normalized);
+        setTopicsModel((current) =>
+          normalized.some((item) => item.id === current)
+            ? current
+            : normalized[0]?.id || current,
+        );
+      })
+      .catch((error) => {
+        if (active)
+          setTopicsError(`دریافت فهرست مدل‌ها ناموفق بود: ${error.message}`);
+      })
+      .finally(() => {
+        if (active) setTopicsModelsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [topicsProvider]);
+  const print = (all) => {
+    setPrintingAll(all);
+    setTimeout(() => window.print(), all ? 700 : 120);
+  };
+  const makePresentation = async () => {
+    setPresentationBusy(true);
+    setPresentationError('');
+    setPresentationSuccess('');
+    try {
+      const runtime = {
+        provider: '9router',
+        config: {
+          model: presentationModel.trim(),
+          fallbackModels: target?.aiPolicy?.fallbackModels || [],
+        },
+      };
+      const plan = await generatePresentationPlan(
+        runtime.provider,
+        runtime.config,
+        data,
+        target,
+        presentationOptions,
+      );
+      const { exportPresentation } = await import('../utils/presentation.js');
+      const output = await exportPresentation(plan, target);
+      setPresentationSuccess(
+        `${output.slideCount} اسلاید ساخته و فایل ${output.fileName} دانلود شد.`,
+      );
+    } catch (error) {
+      setPresentationError(
+        error.message ||
+          'ساخت پرزنتیشن ناموفق بود. مدل دیگری انتخاب کنید و دوباره تلاش کنید.',
+      );
+    } finally {
+      setPresentationBusy(false);
+    }
+  };
+  return (
+    <div className="rd" dir={document.documentElement.dir}>
+      <header className="rd-top">
+        <button onClick={onReset}>
+          <ArrowRight size={16} /> {readOnly ? 'بازگشت' : 'پروژه‌ها'}
+        </button>
+        <div>
+          <b>{target?.name || 'گزارش تحقیق بازار'}</b>
+          <span>
+            Market Research · v0.0.4 {isMock ? '· DEMO' : ''}{' '}
+            {readOnly ? '· OWNER PANEL' : ''}
+          </span>
+        </div>
+        <div>
+          {!readOnly && (
+            <>
+              <button onClick={() => downloadInteroperableReport(data, target)}>
+                <Download size={15} /> خروجی JSON
+              </button>
+              <button
+                className="rd-presentation-trigger"
+                onClick={() => {
+                  setPresentationOpen(true);
+                  setPresentationError('');
+                  setPresentationSuccess('');
+                }}>
+                <Presentation size={15} /> ساخت پرزنتیشن
+              </button>
+            </>
+          )}
+          <button onClick={() => print(false)}>
+            <Printer size={15} /> صفحه جاری
+          </button>
+          <button onClick={() => print(true)}>
+            <Printer size={15} /> کل گزارش
+          </button>
+        </div>
+      </header>
+      <nav className="rd-tabs">
+        {localizedTabs.map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => {
+              setPrintingAll(false);
+              setTab(id);
+            }}
+            className={tab === id ? 'active' : ''}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      <main className="rd-main">
+        {printingAll
+          ? localizedTabs.map(([id, label]) => (
+              <section className="rd-print-section" key={id}>
+                <h1>{label}</h1>
+                {sections[id]}
+              </section>
+            ))
+          : sections[tab]}
+      </main>
+      {!readOnly && presentationOpen && (
+        <div
+          className="presentation-modal-backdrop"
+          onClick={() => !presentationBusy && setPresentationOpen(false)}>
+          <section
+            className="presentation-modal"
+            onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>AI DECK STUDIO</span>
+                <h2>ساخت پرزنتیشن مدیریتی</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPresentationOpen(false)}
+                disabled={presentationBusy}>
+                <X size={20} />
+              </button>
+            </header>
+            <p>
+              هوش مصنوعی روایت ارائه، تیترها و Speaker Notes را از همین گزارش
+              می‌سازد؛ خروجی PowerPoint کاملاً قابل‌ویرایش است.
+            </p>
+            <div className="presentation-model-section">
+              <div className="presentation-provider-tabs">
+                <button
+                  type="button"
+                  className={presentationProvider === 'gemini' ? 'active' : ''}
+                  onClick={() => {
+                    setPresentationProvider('gemini');
+                    setPresentationModel(
+                      import.meta.env.VITE_GEMINI_MODEL ||
+                        'gemini-3.5-flash-lite',
+                    );
+                    setPresentationError('');
+                  }}>
+                  Google Gemini
+                </button>
+                <button
+                  type="button"
+                  className={presentationProvider === '9router' ? 'active' : ''}
+                  onClick={() => {
+                    setPresentationProvider('9router');
+                    setPresentationModel(
+                      presentationAi?.provider === '9router'
+                        ? presentationAi.config?.model || ''
+                        : '',
+                    );
+                    setPresentationError('');
+                  }}>
+                  9Router
+                </button>
+              </div>
+              <label>
+                مدل تولیدکننده پرزنتیشن
+                {presentationProvider === '9router' &&
+                presentationModels.length ? (
+                  <select
+                    value={presentationModel}
+                    onChange={(event) =>
+                      setPresentationModel(event.target.value)
+                    }>
+                    <option value="">یک مدل یا Combo انتخاب کنید</option>
+                    {presentationModels.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.id}
+                        {item.owned_by ? ` · ${item.owned_by}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    dir="ltr"
+                    value={presentationModel}
+                    onChange={(event) =>
+                      setPresentationModel(event.target.value)
+                    }
+                    placeholder={
+                      presentationModelsLoading
+                        ? 'در حال دریافت مدل‌ها…'
+                        : 'نام مدل یا Combo'
+                    }
+                  />
+                )}
+              </label>
+              {presentationModelsLoading && (
+                <small>در حال دریافت مدل‌های فعال 9Router…</small>
+              )}
+              {presentationModelsError && (
+                <small className="presentation-model-error">
+                  {presentationModelsError}
+                </small>
+              )}
+              <small>
+                این انتخاب فقط برای ساخت همین پرزنتیشن استفاده می‌شود و مدل
+                گزارش را تغییر نمی‌دهد.
+              </small>
+            </div>
+            <label>
+              مخاطب ارائه
+              <input
+                value={presentationOptions.audience}
+                onChange={(event) =>
+                  setPresentationOptions({
+                    ...presentationOptions,
+                    audience: event.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              هدف ارائه
+              <textarea
+                rows="2"
+                value={presentationOptions.purpose}
+                onChange={(event) =>
+                  setPresentationOptions({
+                    ...presentationOptions,
+                    purpose: event.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              تعداد اسلاید <strong>{presentationOptions.slideCount}</strong>
+              <input
+                type="range"
+                min="10"
+                max="22"
+                value={presentationOptions.slideCount}
+                onChange={(event) =>
+                  setPresentationOptions({
+                    ...presentationOptions,
+                    purpose: event.target.value,
+                  })
+                }
+              />
+            </label>
+            <div className="presentation-formats">
+              <span>
+                <b>PPTX</b> قابل‌ویرایش
+              </span>
+              <span>
+                <b>Google Slides</b> آماده Import
+              </span>
+              <span>
+                <b>Speaker Notes</b> همراه منابع
+              </span>
+            </div>
+            {presentationBusy && (
+              <div className="presentation-status">
+                <LoaderCircle className="spin" size={18} />
+                <div>
+                  <b>AI در حال طراحی روایت اسلایدهاست…</b>
+                  <small>
+                    پس از ساخت محتوا، فایل PowerPoint خودکار دانلود می‌شود.
+                  </small>
+                </div>
+              </div>
+            )}
+            {presentationError && (
+              <p className="presentation-error">{presentationError}</p>
+            )}
+            {presentationSuccess && (
+              <p className="presentation-success">✓ {presentationSuccess}</p>
+            )}
+            <footer>
+              <button
+                type="button"
+                onClick={() => setPresentationOpen(false)}
+                disabled={presentationBusy}>
+                انصراف
+              </button>
+              <button
+                type="button"
+                className="presentation-build"
+                onClick={makePresentation}
+                disabled={
+                  presentationBusy ||
+                  !presentationModel.trim() ||
+                  !presentationOptions.audience.trim() ||
+                  !presentationOptions.purpose.trim()
+                }>
+                {presentationBusy ? (
+                  <>
+                    <LoaderCircle className="spin" size={16} /> در حال ساخت…
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} /> ساخت و دانلود PPTX
+                  </>
+                )}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -26,6 +26,7 @@ import {
 } from '../utils/projects';
 import IndustryExplorer from './IndustryExplorer';
 import { testAiConnection } from '../utils/ai';
+import { loadAiSettings, saveAiSettings } from '../utils/aiSettings';
 import { useLanguage } from '../i18n.jsx';
 
 const APIFY_TOKEN = import.meta.env.VITE_APIFY_API_KEY || '';
@@ -96,13 +97,15 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
   const [ownerNameDrafts, setOwnerNameDrafts] = useState({});
   const [emailSaveBusy, setEmailSaveBusy] = useState(null);
   const [invitationEditors, setInvitationEditors] = useState({});
-  const [provider, setProvider] = useState(
-    saved?.settings?.provider || 'gemini',
-  );
+  const globalAiSettings = loadAiSettings();
+  const [provider] = useState('9router');
   const [routerModel, setRouterModel] = useState(
-    saved?.settings?.routerModel === 'auto'
+    globalAiSettings.model || (saved?.settings?.routerModel === 'auto'
       ? ''
-      : saved?.settings?.routerModel || '',
+      : saved?.settings?.routerModel || ''),
+  );
+  const [routerFallbackModels, setRouterFallbackModels] = useState(
+    globalAiSettings.fallbackModels.length ? globalAiSettings.fallbackModels : (saved?.settings?.routerFallbackModels || []).filter(Boolean),
   );
   const [routerModels, setRouterModels] = useState([]);
   const [routerModelsError, setRouterModelsError] = useState('');
@@ -120,6 +123,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     nextCompetitors = competitors,
     nextProvider = provider,
     nextRouterModel = routerModel,
+    nextRouterFallbackModels = routerFallbackModels,
   ) => {
     try {
       const cleanCompetitors = nextCompetitors.map(
@@ -130,7 +134,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
         JSON.stringify({
           target: { ...nextTarget, industryBriefing, industryIntelligence },
           competitors: cleanCompetitors,
-          settings: { provider: nextProvider, routerModel: nextRouterModel },
+          settings: { provider: '9router', routerModel: nextRouterModel, routerFallbackModels: nextRouterFallbackModels },
         }),
       );
     } catch {
@@ -144,9 +148,13 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     competitors,
     provider,
     routerModel,
+    routerFallbackModels,
     industryBriefing,
     industryIntelligence,
   ]);
+  useEffect(() => {
+    saveAiSettings({ model: routerModel, fallbackModels: routerFallbackModels });
+  }, [routerModel, routerFallbackModels]);
   useEffect(() => {
     const refresh = () => listProjects().then(setProjects);
     refresh();
@@ -176,6 +184,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
             ? current
             : '',
         );
+        setRouterFallbackModels((current) => current.filter((id) => normalized.some((item) => item.id === id)));
       })
       .catch((error) => {
         if (active)
@@ -221,9 +230,26 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     setInviteError('');
     console.info('[send-invite] started', { projectId });
     try {
-      const record = await loadProjectRecord(projectId);
-      const ownerEmail = String(record?.snapshot?._project?.ownerEmail || '').trim();
-      const ownerName = String(record?.snapshot?._project?.target?.ownerName || '').trim();
+      let record = await loadProjectRecord(projectId);
+      if (!record?.snapshot) throw new Error('گزارش پیدا نشد.');
+      let ownerEmail = String(record.snapshot._project?.ownerEmail || '').trim();
+      let ownerName = String(record.snapshot._project?.target?.ownerName || '').trim();
+      const draftEmail = ownerEmailDrafts[projectId];
+      const draftName = ownerNameDrafts[projectId];
+      const hasDraftChanges = (draftEmail !== undefined && draftEmail.trim().toLowerCase() !== ownerEmail.toLowerCase())
+        || (draftName !== undefined && draftName.trim() !== ownerName);
+      if (hasDraftChanges) {
+        const nextEmail = String(draftEmail ?? ownerEmail).trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+          throw new Error('یک ایمیل معتبر برای کارفرما وارد کنید.');
+        }
+        const nextName = String(draftName ?? ownerName).trim();
+        const target = { ...(record.snapshot._project?.target || {}), ownerName: nextName, ownerEmail: nextEmail };
+        record = await saveProject({ ...record.snapshot, id: projectId }, target);
+        ownerEmail = nextEmail;
+        ownerName = nextName;
+        setProjects((items) => items.map((project) => project.id === projectId ? record : project));
+      }
       const panelToken = String(record?.snapshot?._project?.ownerAccessToken || '').trim();
       if (!ownerEmail) throw new Error('برای این پروژه ایمیل کارفرما ثبت نشده است.');
       const panelUrl = getOwnerPanelUrl(projectId, panelToken);
@@ -340,14 +366,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     onSubmit({
       apifyToken: APIFY_TOKEN,
       provider,
-      aiConfig:
-        provider === 'gemini'
-          ? {
-              apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-              model:
-                import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
-            }
-          : { model: routerModel.trim() },
+      aiConfig: { model: routerModel.trim(), fallbackModels: routerFallbackModels },
       target: {
         ...target,
         industryBriefing,
@@ -378,17 +397,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     setConnectionMessage('');
     setConnectionError('');
     try {
-      const config =
-        provider === 'gemini'
-          ? {
-              apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-              model:
-                import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
-            }
-          : { model: routerModel.trim() };
+      const config = { model: routerModel.trim(), fallbackModels: routerFallbackModels };
       await testAiConnection(provider, config);
       setConnectionMessage(
-        `اتصال موفق است · ${provider === '9router' ? routerModel : config.model}`,
+        `اتصال موفق است · ${routerModel}`,
       );
     } catch (error) {
       setConnectionError(error.message || 'تست اتصال ناموفق بود.');
@@ -458,9 +470,6 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 const storedOwnerName = p.snapshot?._project?.target?.ownerName || invitation?.recipientName || '';
                 const ownerName = storedOwnerName || 'کارفرما';
                 const ownerEmail = p.snapshot?._project?.ownerEmail || invitation?.recipient || '';
-                const hasUnsavedInvitationChange = (ownerEmailDrafts[p.id] !== undefined
-                  && ownerEmailDrafts[p.id].trim().toLowerCase() !== ownerEmail.toLowerCase())
-                  || (ownerNameDrafts[p.id] !== undefined && ownerNameDrafts[p.id].trim() !== storedOwnerName);
                 return <article className="project-item" key={p.id}>
                   <header className="project-item-head">
                     <button type="button" className="project-open" onClick={() => onLoadProject(p.id)}>
@@ -473,7 +482,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   </header>
                   <section className="project-invitation" aria-label={`دعوت کارفرما برای ${p.name}`}>
                     <div className="project-invitation-copy"><Mail size={16} /><span><b>دسترسی کارفرما</b><small>{hasSentInvite ? `دعوت برای ${ownerName} در ${new Date(invitation.lastSentAt).toLocaleDateString('fa-IR')} ارسال شده است.` : 'نام و ایمیل کارفرما را ثبت کنید، سپس لینک اختصاصی را ارسال کنید.'}</small></span></div>
-                    {editorOpen ? <div className="project-invitation-actions"><input type="text" value={ownerNameDrafts[p.id] ?? p.snapshot?._project?.target?.ownerName ?? ''} onChange={(e) => setOwnerNameDrafts({ ...ownerNameDrafts, [p.id]: e.target.value })} placeholder="نام کارفرما" aria-label="نام کارفرما" /><input type="email" value={ownerEmailDrafts[p.id] ?? ownerEmail} onChange={(e) => setOwnerEmailDrafts({ ...ownerEmailDrafts, [p.id]: e.target.value })} placeholder="owner@company.com" dir="ltr" aria-label="ایمیل کارفرما" /><button type="button" className="invite-save" onClick={() => handleSaveOwnerEmail(p.id)} disabled={emailSaveBusy === p.id}>{emailSaveBusy === p.id ? 'در حال ذخیره' : 'ذخیره'}</button><button type="button" className="invite-send" onClick={() => handleSendInvite(p.id)} disabled={inviteBusy === p.id || emailSaveBusy === p.id || hasUnsavedInvitationChange || !ownerEmail} title={hasUnsavedInvitationChange ? 'ابتدا ایمیل جدید را ذخیره کنید.' : undefined}><Send size={14} />{inviteBusy === p.id ? 'در حال ارسال' : 'ارسال دعوت'}</button></div> : <button type="button" className="invite-edit" onClick={() => setInvitationEditors((items) => ({ ...items, [p.id]: true }))}><Pencil size={14} />ویرایش یا ارسال مجدد</button>}
+                    {editorOpen ? <div className="project-invitation-actions"><input type="text" value={ownerNameDrafts[p.id] ?? p.snapshot?._project?.target?.ownerName ?? ''} onChange={(e) => setOwnerNameDrafts({ ...ownerNameDrafts, [p.id]: e.target.value })} placeholder="نام کارفرما" aria-label="نام کارفرما" /><input type="email" value={ownerEmailDrafts[p.id] ?? ownerEmail} onChange={(e) => setOwnerEmailDrafts({ ...ownerEmailDrafts, [p.id]: e.target.value })} placeholder="owner@company.com" dir="ltr" aria-label="ایمیل کارفرما" /><button type="button" className="invite-save" onClick={() => handleSaveOwnerEmail(p.id)} disabled={emailSaveBusy === p.id}>{emailSaveBusy === p.id ? 'در حال ذخیره' : 'ذخیره'}</button><button type="button" className="invite-send" onClick={() => handleSendInvite(p.id)} disabled={inviteBusy === p.id || emailSaveBusy === p.id || !(ownerEmailDrafts[p.id] ?? ownerEmail)}><Send size={14} />{inviteBusy === p.id ? 'در حال ارسال' : 'ذخیره و ارسال دعوت'}</button></div> : <button type="button" className="invite-edit" onClick={() => setInvitationEditors((items) => ({ ...items, [p.id]: true }))}><Pencil size={14} />ویرایش یا ارسال مجدد</button>}
                   </section>
                 </article>
               })}
@@ -492,16 +501,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           target={target}
           apiToken={APIFY_TOKEN}
           provider={provider}
-          aiConfig={
-            provider === 'gemini'
-              ? {
-                  apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-                  model:
-                    import.meta.env.VITE_GEMINI_MODEL ||
-                    'gemini-3.5-flash-lite',
-                }
-              : { model: routerModel.trim() }
-          }
+          aiConfig={{ model: routerModel.trim(), fallbackModels: routerFallbackModels }}
           selected={discoveredCompetitors}
           onChange={(items) => {
             setDiscoveredCompetitors(items);
@@ -527,20 +527,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setProvider('gemini')}
-              className={`rounded-xl border px-4 py-3 text-sm transition-colors ${provider === 'gemini' ? 'border-blue-500 bg-blue-500/15 text-blue-200' : 'border-slate-600 bg-slate-900/40 text-slate-400'}`}>
-              Google Gemini
-            </button>
-            <button
-              type="button"
-              onClick={() => setProvider('9router')}
-              className={`rounded-xl border px-4 py-3 text-sm transition-colors ${provider === '9router' ? 'border-violet-500 bg-violet-500/15 text-violet-200' : 'border-slate-600 bg-slate-900/40 text-slate-400'}`}>
-              9Router
-            </button>
-          </div>
+          <div className="rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">Provider فعال: 9Router</div>
           {provider === '9router' && (
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
@@ -573,6 +560,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   dir="ltr"
                 />
               )}
+              {routerModels.length > 1 && <label className="block text-slate-300 text-sm font-medium mt-4">مدل‌های جایگزین به‌ترتیب اولویت<select multiple value={routerFallbackModels} onChange={(event) => setRouterFallbackModels([...event.target.selectedOptions].map((option) => option.value).filter((id) => id !== routerModel).slice(0, 2))} className="w-full mt-2 min-h-24 bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm" dir="ltr">{routerModels.filter((item) => item.id !== routerModel).map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}</select><span className="block text-slate-500 text-xs mt-1">در خطای موقت، به‌ترتیب تا دو مدل جایگزین امتحان می‌شوند.</span></label>}
               {routerModelsError && (
                 <p className="text-red-400 text-xs mt-2">{routerModelsError}</p>
               )}
@@ -606,27 +594,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   ×
                 </button>
               </header>
-              <p>Provider و مدل برای تحلیل بعدی ذخیره می‌شوند.</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProvider('gemini');
-                    setConnectionMessage('');
-                    setConnectionError('');
-                  }}>
-                  Google Gemini
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProvider('9router');
-                    setConnectionMessage('');
-                    setConnectionError('');
-                  }}>
-                  9Router
-                </button>
-              </div>
+              <p>9Router برای تحلیل این پروژه فعال است. مدل اصلی و جایگزین‌ها همراه پروژه ذخیره می‌شوند.</p>
               {provider === '9router' && (
                 <div className="settings-model-picker">
                   <label>مدل یا Combo فعال 9Router</label>
@@ -949,16 +917,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
           target={target}
           apiToken={APIFY_TOKEN}
           provider={provider}
-          aiConfig={
-            provider === 'gemini'
-              ? {
-                  apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-                  model:
-                    import.meta.env.VITE_GEMINI_MODEL ||
-                    'gemini-3.5-flash-lite',
-                }
-              : { model: routerModel.trim() }
-          }
+          aiConfig={{ model: routerModel.trim(), fallbackModels: routerFallbackModels }}
           selected={discoveredCompetitors}
           onChange={(items) => {
             setDiscoveredCompetitors(items);

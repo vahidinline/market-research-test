@@ -22,8 +22,18 @@ export function normalizeInstagramHandle(value) {
  * Run an Apify actor and wait for results
  */
 export async function runApifyActor(apiToken, actorId, input) {
+  return startAndCollectApifyRun({ apiToken, actorId, input });
+}
+
+/** Runs the website crawler configured server-side. The actor ID and Apify token
+ * remain in Cloudflare secrets, so neither needs to be shipped in the bundle. */
+export async function runWebsiteCrawler(input) {
+  return startAndCollectApifyRun({ mode: 'website', input });
+}
+
+async function startAndCollectApifyRun(payload) {
   try {
-    const proxy = await fetch('/api/apify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ actorId, input, apiToken, limit: 500 }) });
+    const proxy = await fetch('/api/apify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...payload, limit: 500 }) });
     const body = await proxy.json().catch(() => ({}));
     if (!proxy.ok) throw new Error(body.error || `Apify proxy failed (${proxy.status})`);
     const runId=body.runId; let status=body.status;

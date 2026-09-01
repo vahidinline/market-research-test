@@ -7,7 +7,7 @@ const clean = (value) => String(value || '').trim();
 const PIPELINE_VERSION = 'v12-model-assignment-validation';
 const INSTAGRAM_COLLECTION_VERSION = 'v4-target-profile-required';
 
-export async function discoverIndustry({ apiToken, target, aiConfig = {}, provider = 'gemini', onProgress = () => {}, forceRefresh = false, reviewBriefing = '' }) {
+export async function discoverIndustry({ apiToken, target, aiConfig = {}, provider = '9router', onProgress = () => {}, forceRefresh = false, reviewBriefing = '' }) {
   const { cacheKey, result } = await loadRawIndustryData({ apiToken, target, onProgress, forceRefresh });
   result.approvedBriefing = clean(reviewBriefing);
   // A human-approved briefing changes the analytical premise. Reusing a prior
@@ -41,7 +41,7 @@ export async function discoverIndustry({ apiToken, target, aiConfig = {}, provid
   return result;
 }
 
-export async function prepareIndustryReview({ apiToken, target, aiConfig = {}, provider = 'gemini', onProgress = () => {}, forceRefresh = false }) {
+export async function prepareIndustryReview({ apiToken, target, aiConfig = {}, provider = '9router', onProgress = () => {}, forceRefresh = false }) {
   // Category discovery must never inherit a previously suggested category or
   // infer the target from noisy competitor candidates.
   const discoveryTarget = { ...target, category: '' };
