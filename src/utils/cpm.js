@@ -115,11 +115,16 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
       for (const criterion of dependent.independentVariables) {
         if (!(criterion.id in suppliedCriteria)) throw new Error(`معیار ${criterion.label} برای ${identity.name} در خروجی وجود ندارد.`);
         const supplied = suppliedCriteria[criterion.id] || {};
+        // A missing website is an observed zero, not missing data. Keeping it
+        // as null causes the website factor to become null and positioning maps
+        // to drop the entire brand from their dataset.
+        const websiteUnavailable = factor.id === 'website' && identity.hasWebsite === false;
+        const rawScore = websiteUnavailable && supplied.rawScore == null ? 0 : supplied.rawScore ?? null;
         independentScores[criterion.id] = {
-          rawScore: supplied.rawScore ?? null,
-          normalizedScore: normalizeCpmScore(supplied.rawScore, criterion.scoring),
-          evidence: supplied.evidence || '',
-          status: supplied.rawScore == null ? 'not_available' : 'scored',
+          rawScore,
+          normalizedScore: websiteUnavailable && supplied.rawScore == null ? 0 : normalizeCpmScore(rawScore, criterion.scoring),
+          evidence: supplied.evidence || (websiteUnavailable ? 'وب‌سایت ندارد؛ امتیاز صفر.' : ''),
+          status: rawScore == null ? 'not_available' : 'scored',
         };
       }
       const availableCriteria = dependent.independentVariables.filter((criterion) => independentScores[criterion.id].normalizedScore != null);

@@ -85,7 +85,11 @@ export function enforceReportIntegrity(analysis, profilesData) {
   }));
 
   if (result.cpmModel) {
-    const identities = businesses.map((business, index) => ({ name: business.name, isTarget: index === 0 }));
+    const identities = businesses.map((business, index) => ({
+      name: business.name,
+      isTarget: index === 0,
+      hasWebsite: Boolean(business.website),
+    }));
     const calculated = calculateCpmMatrix(result.cpmModel, result.cpmEvaluations, identities);
     result.cpmModel = calculated.model;
     result.cpmMatrix = calculated.matrix;
