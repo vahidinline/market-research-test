@@ -1,3 +1,5 @@
+import { researchScope } from './utils/researchPolicy.js';
+import { shouldResumeDraft, normalizeDraft } from './utils/draftResume.js';
 import { useEffect, useRef, useState } from 'react';
 import ConfigForm from './components/ConfigForm';
 import LoadingScreen from './components/LoadingScreen';
@@ -5,6 +7,7 @@ import ResearchDashboard from './components/ResearchDashboard';
 import CpmApproval from './components/CpmApproval';
 import {
   fetchInstagramProfiles,
+  importLegacyInstagram,
   fetchInstagramPosts,
   normalizeProfile,
   estimateEngagementRate,
@@ -15,7 +18,8 @@ import {
 import { completeResearchWithApprovedCpm, generateAudienceTopics, generateTopicSearchQueries, prepareResearchMethodology } from './utils/ai';
 import { MOCK_ANALYSIS } from './utils/mockData';
 import AuthGate from './components/AuthGate';
-import { loadProject, loadProjectRecord, saveProject } from './utils/projects';
+import AiLogs from './components/AiLogs';
+import { loadProject, loadOwnerProjectRecord, saveProject } from './utils/projects';
 import { inspectWebsite } from './utils/website';
 import { collectAllPlatformData, collectTopicDiscoveryData } from './utils/platforms';
 import { loadResearchCacheFromKeys, saveResearchCache } from './utils/researchCache';
@@ -40,6 +44,62 @@ export default function App() {
   const [ownerPanel, setOwnerPanel] = useState({ loading: false, error: '', project: null });
   // Keep scraped data for this app session so an AI parse/retry never costs another Apify run.
   const profilesCache = useRef(new Map());
+  const activeDraft = useRef(null);
+  const [draftNotice, setDraftNotice] = useState('');
+  const [loadedDraft, setLoadedDraft] = useState(null);
+  useEffect(() => {
+    const onRetry = (event) => setLoadingMessage(event.detail.reason === 'quota'
+      ? 'در انتظار ظرفیت سرویس تحلیل هستیم؛ ادامه به‌صورت خودکار انجام می‌شود. پیشرفت شما ذخیره شده است.'
+      : 'در حال برقراری دوباره ارتباط با سرویس تحلیل؛ ادامه به‌صورت خودکار انجام می‌شود.');
+    const onRetryStart = () => setLoadingMessage('در حال ادامه تحلیل؛ بخش‌های تکمیل‌شده ذخیره شده‌اند.');
+    window.addEventListener('ai-retry', onRetry);
+    window.addEventListener('ai-retry-start', onRetryStart);
+    return () => { window.removeEventListener('ai-retry', onRetry); window.removeEventListener('ai-retry-start', onRetryStart); };
+  }, []);
+  const persistDraft = async () => {
+    const draft = activeDraft.current;
+    if (!draft) return;
+    const saved = await saveProject({ id: draft.id, _project: draft.projectMeta, _draft: draft.data }, draft.data.form.target);
+    draft.projectMeta = saved.snapshot._project;
+    if (saved.persistence !== 'remote') {
+      setDraftNotice('ذخیره در دیتابیس ناموفق بود؛ نسخه مرورگر حفظ شد.');
+      return saved;
+    }
+    setDraftNotice('پیش‌نویس در دیتابیس ذخیره شد.');
+    return saved;
+  };
+  const beginDraft = (form, snapshot = null) => {
+    activeDraft.current = {
+      id: snapshot?.id || crypto.randomUUID(), projectMeta: snapshot?._project,
+      data: snapshot?._draft ? normalizeDraft(snapshot._draft) : { form: { provider: '9router', target: form.target, competitors: form.competitors, industryIntelligence: form.industryIntelligence, aiConfig: { model: form.aiConfig?.model, fallbackModels: form.aiConfig?.fallbackModels || [] } }, stage: 'form', chunks: { methodology: {}, completion: {} } },
+    };
+    if (snapshot?._draft?.stage === 'form') activeDraft.current.data.form = { provider: '9router', target: form.target, competitors: form.competitors, industryIntelligence: form.industryIntelligence, aiConfig: { model: form.aiConfig?.model, fallbackModels: form.aiConfig?.fallbackModels || [] } };
+    return activeDraft.current.data;
+  };
+  const checkpoint = (phase) => ({
+    chunks: activeDraft.current.data.chunks[phase], save: persistDraft,
+    saveIndicators: async (model, status) => {
+      const draft = activeDraft.current.data;
+      const versions = draft.indicatorVersions || [];
+      if (!versions.some(version => version.status === status && JSON.stringify(version.model) === JSON.stringify(model))) {
+        draft.indicatorVersions = [...versions, { id: crypto.randomUUID(), createdAt: new Date().toISOString(), status, model: structuredClone(model) }];
+      }
+      const saved = await persistDraft();
+      if (saved?.persistence !== 'remote') throw new Error('شاخص‌ها در مرورگر حفظ شدند؛ ثبت دیتابیس ناموفق بود. ادامه را پس از برقراری ارتباط انجام دهید.');
+    },
+  });
+  const handleSaveDraft = async (form) => {
+    const sameFormDraft = activeDraft.current?.data.stage === 'form' ? { id: activeDraft.current.id, _project: activeDraft.current.projectMeta, _draft: activeDraft.current.data } : loadedDraft;
+    beginDraft(form, sameFormDraft);
+    const saved = await persistDraft();
+    setLoadedDraft({ ...saved.snapshot, id: saved.id });
+    return activeDraft.current.id;
+  };
+  const recordDraftError = async (error) => {
+    if (!activeDraft.current) return;
+    activeDraft.current.data.error = error.message;
+    try { await persistDraft(); } catch { /* Keep original processing error visible. */ }
+  };
 
   const runWithMockData = (target) => {
     setIsMock(true);
@@ -65,6 +125,19 @@ export default function App() {
     setLoadingStep(0);
 
     try {
+      const draft = beginDraft(formData, formData._resumeSnapshot || loadedDraft);
+      draft.error = null;
+      if (draft.stage === 'form') draft.stage = 'collecting';
+      await persistDraft();
+      if (draft.preliminary) {
+        const context = { provider, aiConfig, target: draft.form.target, competitors, profilesData: draft.profilesData, preliminary: draft.preliminary };
+        setPendingResearch(context);
+        if (draft.approvedModel) { await handleApproveCpm(draft.approvedModel, context); return; }
+        setAppState(STATE.CPM_APPROVAL);
+        return;
+      }
+      let profilesData = draft.profilesData;
+      if (!profilesData) {
       // Step 0: reuse persistent raw data, otherwise call Apify once and save immediately.
       setLoadingStep(0);
       setLoadingMessage('بررسی داده‌های ذخیره‌شده برای جلوگیری از اجرای مجدد Apify...');
@@ -81,12 +154,13 @@ export default function App() {
       let profiles = persisted?.profiles || profilesCache.current.get(cacheKey) || [];
       let posts = persisted?.posts || profilesCache.current.get(`${cacheKey}:posts`) || [];
       if (persisted) {
+        await importLegacyInstagram(profiles, posts, normalizedHandles);
         profilesCache.current.set(cacheKey, profiles);
         profilesCache.current.set(`${cacheKey}:posts`, posts);
         setLoadingMessage('داده خام Instagram از کش بازیابی شد؛ هزینه جدیدی برای Apify ایجاد نشد.');
         if (matchedKey !== cacheKey) saveResearchCache(cacheKey, persisted).catch((error) => console.error('Cache key migration failed', error));
       }
-      if (allHandles.length > 0 && !persisted && !profilesCache.current.has(cacheKey)) {
+      if (allHandles.length > 0 && !persisted) {
         setLoadingMessage('مرحله ۱ از ۶: دریافت پروفایل‌های Instagram...');
         const rawProfiles = await fetchInstagramProfiles(
           apifyToken,
@@ -127,7 +201,7 @@ export default function App() {
         profileMap[normalizeInstagramHandle(p.username).toLowerCase()] = p;
       });
 
-      const enrichBusiness = (business, websiteDataForBusiness) => {
+      const enrichBusiness = (business, websiteDataForBusiness, channels) => {
         const handle = normalizeInstagramHandle(business.instagramHandle).toLowerCase();
         const businessPosts = posts.filter((post) => postOwnerHandle(post) === handle);
         const instagramData = profileMap[handle] || null;
@@ -138,55 +212,74 @@ export default function App() {
           instagramPosts: businessPosts,
           instagramSummary: summarizeInstagramPosts(businessPosts, instagramData?.followersCount || 0),
           websiteData: websiteDataForBusiness,
-          platformData,
+          platformData: channels,
         };
       };
 
       setLoadingMessage('مرحله ۴ از ۶: بررسی Websiteهای ثبت‌شده...');
       const websiteData = await Promise.all([target, ...competitors].map((business) => inspectWebsite(business.website)));
-      const platformData = await collectAllPlatformData(apifyToken, [target, ...competitors]);
-      const profilesData = {
-        target: enrichBusiness(target, websiteData[0]),
+      const platformData = await collectAllPlatformData(apifyToken, [target, ...competitors], target);
+      profilesData = {
+        target: enrichBusiness(target, websiteData[0], platformData[0]),
         competitors: competitors.map((c, index) => ({
-          ...enrichBusiness(c, websiteData[index + 1]),
-          platformData,
+          ...enrichBusiness(c, websiteData[index + 1], platformData[index + 1]),
         })),
       };
 
+      draft.profilesData = profilesData;
+      draft.stage = 'methodology';
+      await persistDraft();
+      }
       // Step 2: AI analysis
       setLoadingStep(2);
       setLoadingMessage('مرحله ۵ از ۶: تولید تحلیل عمیق بازار و رقبا...');
       const enrichedTarget = { ...target, industryIntelligence };
       const preliminary = await prepareResearchMethodology(
         provider, aiConfig, enrichedTarget, competitors, profilesData,
-        (message) => setLoadingMessage(`مرحله ۵ از ۶: ${message}`),
+        (message) => setLoadingMessage(`مرحله ۵ از ۶: ${message}`), checkpoint('methodology'),
       );
+      draft.preliminary = preliminary;
+      draft.stage = 'cpm_approval';
+      await persistDraft();
       setPendingResearch({ provider, aiConfig, target: enrichedTarget, competitors, profilesData, preliminary });
       setAppState(STATE.CPM_APPROVAL);
     } catch (err) {
       console.error(err);
       setLoadingError(err.message || 'خطای ناشناخته رخ داد.');
+      await recordDraftError(err);
     }
   };
 
-  const handleApproveCpm = async (approvedModel) => {
-    if (!pendingResearch) return;
-    const { provider, aiConfig, target, competitors, profilesData, preliminary } = pendingResearch;
+  const handleApproveCpm = async (approvedModel, context = pendingResearch) => {
+    if (!context) return;
+    const { provider, aiConfig, target, competitors, profilesData, preliminary } = context;
     setAppState(STATE.LOADING);
     setLoadingError(null);
     setLoadingStep(2);
     try {
+      const draft = activeDraft.current.data;
+      if (draft.approvedModel && JSON.stringify(draft.approvedModel.factors) !== JSON.stringify(approvedModel.factors)) draft.chunks.completion = {};
+      await checkpoint('methodology').saveIndicators(approvedModel, 'approved');
+      draft.approvedModel = approvedModel;
+      draft.stage = 'scoring';
+      draft.error = null;
+      await persistDraft();
       setLoadingMessage('مرحله ۵ از ۶: مدل CPM تأیید شد؛ امتیازدهی همه برندها با نسخه قفل‌شده...');
       let analysis = await completeResearchWithApprovedCpm(
         provider, aiConfig, target, competitors, profilesData, preliminary, approvedModel,
-        (message) => setLoadingMessage(`مرحله ۵ از ۶: ${message}`),
+        (message) => setLoadingMessage(`مرحله ۵ از ۶: ${message}`), checkpoint('completion'),
       );
       setLoadingStep(3);
       setLoadingMessage('مرحله ۶ از ۶: ذخیره گزارش نهایی و آماده‌سازی داشبورد...');
+      analysis.analysisMetrics = ['methodology', 'completion'].flatMap(phase => draft.chunks[phase]?.['analysis-metrics-v1'] || []);
       analysis = enforceReportIntegrity(analysis, profilesData);
       setReportTarget(target);
       setReportData(analysis);
-      const savedProject = await saveProject(analysis, target);
+      const savedProject = await saveProject({ ...analysis, indicatorVersions: draft.indicatorVersions || [], approvedModel: draft.approvedModel, id: activeDraft.current.id, _project: activeDraft.current.projectMeta }, target);
+      if (savedProject.persistence !== 'remote') setDraftNotice('گزارش نهایی در این مرورگر ذخیره شد؛ سرور در دسترس نبود.');
+      activeDraft.current = null;
+      setLoadedDraft(null);
+      if (savedProject.persistence === 'remote') setDraftNotice('');
       setCurrentProjectId(savedProject.id);
       setPendingResearch(null);
       setIsMock(false);
@@ -194,6 +287,7 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setLoadingError(err.message || 'خطای ناشناخته رخ داد.');
+      await recordDraftError(err);
     }
   };
 
@@ -203,7 +297,9 @@ export default function App() {
   };
 
   const handleReset = () => {
+    activeDraft.current = null;
     setAppState(STATE.FORM);
+    setLoadedDraft(null);
     setLoadingStep(0);
     setLoadingError(null);
     setReportData(null);
@@ -225,7 +321,7 @@ export default function App() {
     }
     let active = true;
     setOwnerPanel({ loading: true, error: '', project: null });
-    loadProjectRecord(projectId)
+    loadOwnerProjectRecord(projectId, token)
       .then((record) => {
         if (!active) return;
         const savedToken = String(record?.snapshot?._project?.ownerAccessToken || '');
@@ -246,32 +342,58 @@ export default function App() {
     const globalAi = loadAiSettings();
     const runtime = runtimeOverride || reportAiRuntime || { provider: '9router', config: { model: globalAi.model, fallbackModels: globalAi.fallbackModels } };
     onProgress('ساخت عبارت‌های جست‌وجو از صنعت، مخاطب و خدمات گزارش...');
-    const searchQueries = await generateTopicSearchQueries(runtime.provider, runtime.config, reportTarget, reportData, onProgress);
-    onProgress('جست‌وجوی بازار در YouTube، LinkedIn و Reddit با Apify...');
-    const platformData = await collectTopicDiscoveryData(import.meta.env.VITE_APIFY_API_KEY || '', searchQueries);
+    const topicDraft = reportData.audienceTopicDraft || { chunks: {} };
+    const saveTopicDraft = async () => {
+      const snapshot = { ...reportData, id: currentProjectId || reportData.id, audienceTopicDraft: topicDraft };
+      const saved = await saveProject(snapshot, reportTarget);
+      setReportData(snapshot);
+      if (saved.persistence !== 'remote') throw new Error('خروجی مرحله حفظ شد، اما ذخیره در سرور انجام نشد. دوباره ادامه دهید.');
+      return saved;
+    };
+    const hasOptionalChannels = researchScope(reportTarget).some(channel => !['website', 'instagram'].includes(channel));
+    const searchQueries = topicDraft.searchQueries || (hasOptionalChannels ? await generateTopicSearchQueries(runtime.provider, runtime.config, reportTarget, reportData, onProgress) : []);
+    topicDraft.searchQueries = searchQueries;
+    await saveTopicDraft();
+    onProgress('بررسی شواهد وب و اینستاگرام و کانال‌های اختیاری انتخاب‌شده...');
+    const platformData = topicDraft.platformData || (hasOptionalChannels ? await collectTopicDiscoveryData(import.meta.env.VITE_APIFY_API_KEY || '', searchQueries, reportTarget) : {});
+    topicDraft.platformData = platformData;
+    await saveTopicDraft();
     onProgress('تحلیل سیگنال‌ها و ساخت ۵۰ موضوع پرتکرار...');
-    const audienceTopics = await generateAudienceTopics(runtime.provider, runtime.config, reportTarget, reportData, platformData, onProgress);
-    const updated = { ...reportData, id: currentProjectId || reportData.id, audienceTopics, audienceTopicsMeta: { updatedAt: new Date().toISOString(), searchMode: 'market_wide_keyword_discovery', searchQueries, sourceStatus: Object.fromEntries(Object.entries(platformData).map(([key, value]) => [key, value.status])) } };
+    const audienceTopics = await generateAudienceTopics(runtime.provider, runtime.config, reportTarget, reportData, platformData, onProgress, { chunks: topicDraft.chunks, save: saveTopicDraft });
+    const updated = { ...reportData, id: currentProjectId || reportData.id, audienceTopics, audienceTopicsMeta: { updatedAt: new Date().toISOString(), searchMode: 'market_wide_keyword_discovery', searchQueries, scope: researchScope(reportTarget), sourceStatus: Object.fromEntries(Object.entries(platformData).map(([key, value]) => [key, value.status])) } };
+    delete updated.audienceTopicDraft;
     await saveProject(updated, reportTarget);
     setReportData(updated);
     return audienceTopics;
   };
 
+  const handleSaveAnalysis = async (key, value) => {
+    const updated = { ...reportData, id: currentProjectId || reportData.id, analysisChunks: { ...(reportData.analysisChunks || {}), [key]: value } };
+    await saveProject(updated, reportTarget);
+    setReportData(updated);
+  };
+
   const handleLoadProject = async (id) => {
     const snapshot = await loadProject(id);
+    if (!snapshot) throw new Error('پیش‌نویس بارگذاری نشد؛ اتصال را بررسی کنید و دوباره ادامه دهید.');
     if (snapshot) {
+      if (snapshot._draft) {
+        if (!shouldResumeDraft(snapshot._draft)) { setLoadedDraft({ ...snapshot, id }); setAppState(STATE.FORM); setDraftNotice('پیش‌نویس فرم بازیابی شد؛ برای شروع تحلیل، دکمه شروع را بزنید.'); return; }
+        await handleSubmit({ ...snapshot._draft.form, apifyToken: import.meta.env.VITE_APIFY_API_KEY || '', _resumeSnapshot: { ...snapshot, id } });
+        return;
+      }
       const savedTarget = snapshot._project?.target || { name: 'پروژه ذخیره‌شده' };
       const savedCompetitors = (snapshot.competitorAnalysis || []).map((competitor) => ({
         name: competitor.name,
         instagramHandle: competitor.instagramHandle,
-        website: competitor.website,
+        website: snapshot._integrity?.businessSources?.find((source) => source.name === competitor.name)?.website ?? competitor.website,
       }));
       const handles = [savedTarget.instagramHandle, ...savedCompetitors.map((item) => item.instagramHandle)]
         .map(normalizeInstagramHandle).filter(Boolean);
       const signature = [...new Set(handles.map((handle) => handle.toLowerCase()))].sort().join('|');
       const cacheKey = `instagram-v2:${signature}`;
       const { payload: cached } = handles.length ? await loadResearchCacheFromKeys([cacheKey, signature]) : { payload: null };
-      let repaired = snapshot;
+      let repaired = enforceReportIntegrity(snapshot, { target: savedTarget, competitors: savedCompetitors });
       if (cached?.profiles && cached?.posts) {
         const profileMap = Object.fromEntries(cached.profiles.map((profile) => [normalizeInstagramHandle(profile.username).toLowerCase(), profile]));
         const enrich = (business) => {
@@ -302,20 +424,25 @@ export default function App() {
     },
   };
   const app = appState === STATE.LOADING ? (
-    <LoadingScreen currentStep={loadingStep} message={loadingMessage} error={loadingError} onUseMockData={handleUseMockFallback} language={language} />
+    <LoadingScreen currentStep={loadingStep} message={loadingMessage} error={loadingError} onUseMockData={handleUseMockFallback} onResume={activeDraft.current ? () => handleSubmit({ ...activeDraft.current.data.form, _resumeSnapshot: { id: activeDraft.current.id, _project: activeDraft.current.projectMeta, _draft: activeDraft.current.data } }) : null} onBack={handleReset} language={language} />
   ) : appState === STATE.CPM_APPROVAL && pendingResearch ? (
-    <CpmApproval model={pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onCancel={handleReset} />
+    <CpmApproval versions={activeDraft.current?.data.indicatorVersions || []} model={activeDraft.current?.data.approvedModel || pendingResearch.preliminary.cpmModel} target={pendingResearch.target} onApprove={handleApproveCpm} onSaveDraft={async (model) => {
+      await checkpoint('methodology').saveIndicators(model, 'edited');
+      activeDraft.current.data.preliminary.cpmModel = model;
+      await persistDraft();
+    }} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
-    <ResearchDashboard data={reportData} target={dashboardTarget} isMock={isMock} onReset={handleReset} presentationAi={globalAiRuntime} onRefreshTopics={handleRefreshTopics} />
+    <ResearchDashboard onSaveAnalysis={handleSaveAnalysis} data={reportData} target={dashboardTarget} isMock={isMock} onReset={handleReset} presentationAi={globalAiRuntime} onRefreshTopics={handleRefreshTopics} />
   ) : (
-    <ConfigForm onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
+    <ConfigForm key={loadedDraft?.id || "new"} initialDraft={loadedDraft?._draft.form} onSaveDraft={handleSaveDraft} onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
   );
   if (ownerPanel.loading) return <div dir={dir} className="min-h-screen grid place-items-center text-slate-200">در حال بارگذاری پنل کارفرما…</div>;
   if (ownerPanel.error) return <div dir={dir} className="min-h-screen grid place-items-center text-red-300">{ownerPanel.error}</div>;
   if (ownerPanel.project) {
     const snapshot = ownerPanel.project.snapshot || {};
     const target = snapshot._project?.target || snapshot.target || { name: ownerPanel.project.name || 'گزارش' };
-    return <div dir={dir}><ResearchDashboard data={snapshot} target={target} isMock={false} onReset={() => window.location.assign(window.location.pathname)} presentationAi={null} onRefreshTopics={null} readOnly /></div>;
+    const checked = enforceReportIntegrity(snapshot, { target, competitors: (snapshot.competitorAnalysis || []).map((item) => ({ name: item.name, instagramHandle: item.instagramHandle, website: snapshot._integrity?.businessSources?.find((source) => source.name === item.name)?.website ?? item.website })) });
+    return <div dir={dir}><ResearchDashboard data={checked} target={target} isMock={false} onReset={() => window.location.assign(window.location.pathname)} presentationAi={null} onRefreshTopics={null} readOnly /></div>;
   }
-  return <div dir={dir}><AuthGate>{app}</AuthGate></div>;
+  return <div dir={dir}><AuthGate>{draftNotice && <div role="status" style={{ background: "#172033", color: "white", padding: 12 }}>{draftNotice}</div>}{app}<AiLogs /></AuthGate></div>;
 }

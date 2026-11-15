@@ -5,6 +5,16 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 export async function onRequestGet({ request, env }) {
   if (!env.DB) return json({ error: 'D1 binding DB is not configured' }, 503);
   const id = new URL(request.url).searchParams.get('id');
+  if (new URL(request.url).searchParams.has('token')) {
+    const token = new URL(request.url).searchParams.get('token');
+    const row = id ? await env.DB.prepare('SELECT * FROM projects WHERE id=?1').bind(id).first() : null;
+    const snapshot = row ? JSON.parse(row.snapshot) : null;
+    if (!token || !snapshot?._project?.ownerAccessToken || snapshot._project.ownerAccessToken !== token)
+      return json({ error: 'دسترسی این پنل معتبر نیست.' }, 403);
+    const response = json({ ...row, snapshot });
+    response.headers.set('cache-control', 'no-store');
+    return response;
+  }
   if (id) {
     const row = await env.DB.prepare('SELECT * FROM projects WHERE id=?1').bind(id).first();
     return row ? json({ ...row, snapshot: JSON.parse(row.snapshot) }) : json({ error: 'not found' }, 404);

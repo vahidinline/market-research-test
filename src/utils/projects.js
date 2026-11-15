@@ -1,16 +1,31 @@
+import { withDeadline } from './deadline.js';
 const KEY = 'market_research_projects';
 const local = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
 const write = (items) => localStorage.setItem(KEY, JSON.stringify(items));
 const randomId = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+const savedTime = (project) => Date.parse(project?.snapshot?._project?.savedAt || project?.updated_at || '') || 0;
+const newest = (browser, remote) => browser && (!remote || savedTime(browser) > savedTime(remote)) ? browser : remote;
+
+
+async function projectRequest(url, init = {}) {
+  return withDeadline(async (signal) => {
+    const response = await fetch(url, { ...init, signal });
+    const data = await response.json().catch((error) => {
+      if (error instanceof SyntaxError) return {};
+      throw error;
+    });
+    return { response, data };
+  }, 15000, 'مهلت ارتباط با ذخیره‌سازی سرور تمام شد؛ نسخه مرورگر حفظ شده است.');
+}
 
 export async function listProjects() {
   const localProjects = local();
   try {
-    const r = await fetch('/api/projects', { headers: { accept: 'application/json' }, cache: 'no-store' });
+    const { response: r, data } = await projectRequest('/api/projects', { headers: { accept: 'application/json' }, cache: 'no-store' });
     if (!r.ok) throw new Error();
-    const remoteProjects = (await r.json()).projects || [];
+    const remoteProjects = data.projects || [];
     const merged = new Map();
-    [...localProjects, ...remoteProjects].forEach((project) => merged.set(project.id, project));
+    [...localProjects, ...remoteProjects].forEach((project) => merged.set(project.id, newest(merged.get(project.id), project)));
     return [...merged.values()].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   } catch { return localProjects; }
 }
@@ -32,16 +47,19 @@ export async function saveProject(snapshot, target) {
     },
   };
   const item = { id: snapshot.id || randomId(), name: target?.name || 'پروژه بدون نام', industry: target?.industry || '', snapshot: storedSnapshot, updated_at: new Date().toISOString() };
+  // Commit locally before awaiting the network; a tab refresh or disconnect
+  // must not replace a successful analysis with an older server draft.
+  let browserSaved = false;
+  try { write([item, ...local().filter(x => x.id !== item.id)]); browserSaved = true; } catch {}
   try {
-    const r = await fetch('/api/projects', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(item) });
+    const { response: r, data } = await projectRequest('/api/projects', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(item) });
     if (!r.ok) {
-      const error = await r.json().catch(() => ({}));
+      const error = data;
       throw new Error(error?.error || `خطای ذخیره‌سازی (${r.status})`);
     }
     return { ...item, persistence: 'remote' };
   } catch (error) {
-    const items = [item, ...local().filter(x => x.id !== item.id)];
-    write(items);
+    if (!browserSaved) throw new Error(`ذخیره این بخش در مرورگر و سرور ناموفق بود: ${error.message}`);
     return { ...item, persistence: 'local', persistenceError: error.message || 'ذخیره‌سازی سمت سرور در دسترس نیست.' };
   }
 }
@@ -145,15 +163,23 @@ export async function importProjectTransfer(file) {
   return imported;
 }
 export async function loadProject(id) {
-  try { const r = await fetch(`/api/projects?id=${encodeURIComponent(id)}`); if (r.ok) return (await r.json()).snapshot; } catch {}
-  const item = local().find(x => x.id === id); return item?.snapshot || null;
+  return (await loadProjectRecord(id))?.snapshot || null;
 }
 export async function loadProjectRecord(id) {
+  const browser = local().find((x) => x.id === id);
   try {
-    const r = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { headers: { accept: 'application/json' }, cache: 'no-store' });
-    if (r.ok) return await r.json();
+    const { response: r, data } = await projectRequest(`/api/projects?id=${encodeURIComponent(id)}`, { headers: { accept: 'application/json' }, cache: 'no-store' });
+    if (r.ok) return newest(browser, data);
   } catch {}
-  return local().find((x) => x.id === id) || null;
+  return browser || null;
+}
+export async function loadOwnerProjectRecord(id, token) {
+  const query = new URLSearchParams({ id, token });
+  const { response, data } = await projectRequest(`/api/projects?${query}`, {
+    headers: { accept: 'application/json' }, cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(data.error || 'بارگذاری پنل ناموفق بود.');
+  return data;
 }
 export function getOwnerPanelUrl(projectId, token) {
   const url = new URL(window.location.href);
@@ -163,6 +189,6 @@ export function getOwnerPanelUrl(projectId, token) {
   return url.toString();
 }
 export async function deleteProject(id) {
-  try { await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
+  try { await projectRequest(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
   write(local().filter(x => x.id !== id));
 }

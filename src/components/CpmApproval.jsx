@@ -28,18 +28,20 @@ function MainFactorWeights({ factors, onChange }) {
   return <section className="cpm-main-weights"><div className="cpm-main-weights-copy"><span>STEP 02 · WEIGHTED FRAMEWORK</span><h2>وزن‌دهی چهار شاخص اصلی</h2><p>اهمیت نسبی هر فاکتور را برای این پروژه تعیین کنید. مجموع وزن‌ها باید دقیقاً ۱۰۰٪ باشد.</p></div><div className="cpm-main-weight-grid">{factors.map((factor, index) => <article key={factor.id} className={`cpm-main-weight-card factor-${index}`}><div className="cpm-main-weight-head"><span>{String(index + 1).padStart(2, '0')}</span><b>{factor.label}</b><strong>{Math.round((Number(factor.weight) || 0) * 100)}٪</strong></div><div className="cpm-main-weight-track"><i style={{ width: `${Math.max(0, Math.min(100, (Number(factor.weight) || 0) * 100))}%` }}/></div><label>وزن فاکتور<input type="number" min="0" max="1" step="0.01" value={factor.weight} onChange={(event) => onChange((next) => { next.factors[index].weight = Number(event.target.value); })}/></label><small>{factor.definition || 'تعریف فاکتور هنوز تکمیل نشده است.'}</small></article>)}</div></section>;
 }
 
-export default function CpmApproval({ model, target, onApprove, onCancel }) {
+export default function CpmApproval({ model, versions = [], target, onApprove, onCancel, onSaveDraft }) {
   const [draft, setDraft] = useState(() => {
     const initial = clone(model);
     initial.factorCandidatePool = (initial.factorCandidatePool || []).map((candidate) => ({
       ...candidate,
-      status: candidate.alreadyIncluded ? 'included' : 'review',
+      status: candidate.alreadyIncluded ? 'included' : candidate.status || 'review',
       selectedFactorId: candidate.selectedFactorId || candidate.suggestedFactorId || 'industry_specific',
     }));
     return initial;
   });
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
   const criterionCount = useMemo(() => draft.factors.reduce((count, factor) => count + factor.dependentVariables.reduce((inner, dependent) => inner + dependent.independentVariables.length, 0), 0), [draft]);
 
   const change = (recipe) => {
@@ -101,6 +103,7 @@ export default function CpmApproval({ model, target, onApprove, onCancel }) {
         dependent.independentVariables.push({
           id: criterionId, label: candidate.label, definition: proposed.definition || candidate.customerDecisionImpact || '',
           weight: 0, reason: proposed.reason || candidate.classificationReason || '', evidenceSource: proposed.evidenceSource || 'operator_approved_candidate',
+          evidenceIds: proposed.evidenceIds || [],
           scoring: proposed.scoring || { type: 'binary', min: 0, max: 1, normalization: 'min-max', rubricLevels: [] },
         });
         rebalance(dependent.independentVariables);
@@ -127,6 +130,10 @@ export default function CpmApproval({ model, target, onApprove, onCancel }) {
       {!!draft.assumptions?.length && <div className="cpm-assumptions"><strong>فرض‌های نیازمند توجه اپراتور</strong>{draft.assumptions.map((item, index) => <p key={`${item}-${index}`}>— {item}</p>)}</div>}
     </section>
 
+    {!!versions.length && <section className="cpm-toolbar"><label>بازیابی نسخهٔ شاخص‌ها <select defaultValue="" onChange={(event) => {
+      const version = versions.find(item => item.id === event.target.value);
+      if (version) { setDraft(clone(version.model)); setDirty(true); setError(''); }
+    }}><option value="" disabled>انتخاب نسخهٔ ذخیره‌شده</option>{versions.filter(version => ['proposed', 'ready_for_review', 'edited', 'approved'].includes(version.status)).map((version, index) => <option key={version.id} value={version.id}>نسخه {index + 1} · {({ proposed: 'پیشنهادی', ready_for_review: 'آماده بررسی', edited: 'ویرایش‌شده', approved: 'تأییدشده' })[version.status]} · {new Date(version.createdAt).toLocaleString('fa-IR')}</option>)}</select></label></section>}
     <section className="cpm-toolbar">
       <div><WeightSummary items={draft.factors} label="مجموع وزن فاکتورهای ثابت"/><small>{draft.factors.length} فاکتور ثابت · {criterionCount} متغیر مستقل</small></div>
       <button onClick={() => change((next) => equalize(next.factors))}>توزیع مساوی وزن فاکتورها</button>
@@ -179,6 +186,13 @@ export default function CpmApproval({ model, target, onApprove, onCancel }) {
     <footer className="cpm-approval-actions">
       <div>{error && <p>{error}</p>}<small>تأیید، مدل را قفل می‌کند و امتیازدهی همه برندها با همین نسخه آغاز می‌شود.</small></div>
       <button className="secondary" onClick={onCancel}>بازگشت بدون اعمال</button>
+      <button className="secondary" disabled={saving} onClick={async () => {
+        setSaving(true); setSaveMessage('');
+        try { await onSaveDraft(clone(draft)); setSaveMessage('شاخص‌ها و ویرایش‌ها در دیتابیس ذخیره شدند.'); }
+        catch (saveError) { setError(saveError.message); }
+        finally { setSaving(false); }
+      }}>{saving ? 'در حال ذخیره…' : 'ذخیره پیش‌نویس شاخص‌ها'}</button>
+      {saveMessage && <p role="status">{saveMessage}</p>}
       <button className="primary" onClick={submit}><CheckCircle2 size={17}/> تأیید، قفل و ادامه تحلیل</button>
     </footer>
   </div>;

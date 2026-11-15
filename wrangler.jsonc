@@ -3,6 +3,12 @@
   "name": "market-research-dashboard",
   "pages_build_output_dir": "dist",
   "compatibility_date": "2026-04-17",
+  "vars": {
+    "AI_PROVIDER": "azure",
+    "APIFY_WEBSITE_ACTOR": "apify/website-content-crawler",
+    "AZURE_OPENAI_ENDPOINT": "https://automatune-resource.services.ai.azure.com/openai/v1/responses",
+    "AZURE_OPENAI_DEPLOYMENT": "gpt-6-astra-1"
+  },
   "d1_databases": [
     {
       "binding": "DB",

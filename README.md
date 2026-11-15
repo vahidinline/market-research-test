@@ -72,7 +72,7 @@ Four Recharts scatter maps compare:
 - Tailwind CSS 4
 - Recharts
 - Lucide React
-- 9Router for AI analysis
+- Azure Foundry for AI analysis
 - Apify for Instagram profile collection
 - pnpm for package management
 
@@ -83,7 +83,7 @@ Four Recharts scatter maps compare:
 - Node.js 20 or newer
 - pnpm 9 or newer
 - An Apify API token for live Instagram data
-- A 9Router API key for AI analysis
+- An Azure Foundry API key for AI analysis
 
 ### Installation
 
@@ -115,23 +115,25 @@ VITE_APIFY_REDDIT_ACTOR=
 # Put this in Cloudflare Pages Secrets (or .dev.vars locally), not .env.local.
 APIFY_WEBSITE_ACTOR=apify/website-content-crawler
 
-# Demo/client-side gate only — not production authentication
-VITE_AUTH_EMAIL=your-email@example.com
-VITE_AUTH_PASSWORD=change-this-password
+# Server-side authentication: put these in .dev.vars, not Vite frontend env files
+ROOT_EMAIL=your-email@example.com
+ROOT_PASSWORD=change-this-password
 ```
 
 Never commit `.env.local` or real credentials to a public repository.
 
-Keep the required OpenAI-compatible 9Router credentials in the Cloudflare Pages
+Keep the Azure Foundry credentials in the Cloudflare Pages
 Function environment (not in a `VITE_*` variable):
 
 ```env
-NINE_ROUTER_API_KEY=your_9router_api_key
-NINE_ROUTER_BASE_URL=https://router.vahidafshari.com/v1
+AI_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=https://automatune-resource.services.ai.azure.com/openai/v1/responses
+AZURE_OPENAI_DEPLOYMENT=gpt-6-astra-1
+AZURE_OPENAI_API_KEY=your_azure_api_key
 ```
 
 For local Pages development, place these values in the git-ignored `.dev.vars`
-file. In production, add `NINE_ROUTER_API_KEY` as an encrypted Pages secret.
+file. In production, add `AZURE_OPENAI_API_KEY` as an encrypted Pages secret.
 
 ### Run locally
 
@@ -140,7 +142,7 @@ pnpm dev
 ```
 
 Open `http://localhost:5173`. This command builds the frontend and starts the
-Cloudflare worker routes used by 9Router, Apify, projects, and website
+Cloudflare worker routes used by Azure Foundry, Apify, projects, and website
 inspection. Use `pnpm dev:frontend` only for frontend-only work that does not
 call these API routes. `pnpm dev:fullstack` remains an alias for `pnpm dev`.
 
@@ -162,9 +164,35 @@ pnpm lint
 
 ## AI providers
 
-The application uses 9Router exclusively. Each project stores its primary model
-and up to two ordered fallback models. The server tries the next model only for
-temporary failures such as rate limits, timeouts, or upstream 5xx errors.
+The configured provider is Azure Foundry Responses API. The server selects
+`AZURE_OPENAI_DEPLOYMENT`; old project model choices cannot redirect Azure calls.
+The deployment name must match the Azure deployment, which may differ from the
+resource name. The model selector lists this configured name without requesting
+an upstream model catalogue. Use the connection test to verify credentials and deployment.
+
+The supplied quota is 472 requests and 472,000 tokens per minute. Atomic D1
+reservations share a rolling 60-second budget across Worker instances: 424
+requests and 424,800 estimated tokens, plus 150ms spacing to reduce bursts.
+Input UTF-8 bytes plus the maximum output and 512 tokens of overhead are reserved
+conservatively, even when a call fails. This trades throughput for headroom;
+it is not Azure's exact tokenizer or quota estimator. Other apps using the same
+Azure quota remain outside this accounting. A shared cooldown honors Azure 429
+Retry-After (including retry-after-ms), and the browser waits with jitter before
+retrying. Quota responses (429) wait and retry without an attempt cap; they do
+not consume the separate three-attempt budget for network/server failures. The
+loading screen shows a neutral capacity-wait message instead of an error. This
+execution runs while the page is open (also in a background tab); it is not a
+server-side job that continues after closing the browser. Completed checkpoints
+remain in D1 and can be resumed after reopening. Permanent errors still surface.
+D1 quota tables are created automatically; no additional binding is required.
+Missing quota storage prevents requests. Existing heartbeat transport remains
+active while Azure generates its response, with a 180-second Azure upstream deadline and 210-second client deadline.
+Azure Responses are streamed, and only the terminal completed response is accepted.
+
+Local setup: add the key to `.dev.vars`, then restart `pnpm dev`. In production,
+configure the encrypted Pages secret and redeploy. Never put the key in `VITE_*`.
+The older router path remains for compatibility when Azure is explicitly disabled
+and its secret is absent; the checked-in Wrangler configuration enables Azure.
 
 The prompt requests a structured JSON response containing the complete research schema. The response parser also handles fenced JSON, surrounding text, and common trailing-comma errors. If an AI response fails, the app retries the AI request using the already-fetched data rather than making another Apify request.
 
@@ -183,17 +211,9 @@ The demo report can be opened without external API calls through the sample-data
 
 ## Authentication note
 
-The current authentication gate is a lightweight client-side demo gate. Credentials are read from `VITE_AUTH_EMAIL` and `VITE_AUTH_PASSWORD`, which means they are bundled into the frontend and are not secret in a deployed browser application.
+Authentication is server-backed: users and sessions are stored in D1, and passwords are hashed with PBKDF2. Configure `ROOT_EMAIL` and `ROOT_PASSWORD` in `.dev.vars` locally or server secrets in production. The root account is created only if its email does not already exist; changing the environment password does not reset an existing account.
 
-For production use, replace `AuthGate` with a server-backed authentication system such as:
-
-- Auth.js
-- Supabase Auth
-- Clerk
-- Firebase Authentication
-- A custom backend session flow
-
-Do not use the current client-side credentials as security protection for sensitive data.
+Run `pnpm dev` for local login and API support. `pnpm dev:frontend` runs only Vite and cannot handle `/api/auth/*`. Legacy `VITE_AUTH_*` variables do not configure the current password. Keep authentication credentials out of frontend environment files.
 
 ## SendPulse invitation emails
 

@@ -36,14 +36,16 @@ async function startAndCollectApifyRun(payload) {
     const proxy = await fetch('/api/apify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...payload, limit: 500 }) });
     const body = await proxy.json().catch(() => ({}));
     if (!proxy.ok) throw new Error(body.error || `Apify proxy failed (${proxy.status})`);
-    const runId=body.runId; let status=body.status;
-    for(let attempt=0; ['READY','RUNNING'].includes(status) && attempt<120; attempt++){
+    if (Array.isArray(body.items)) return body.items;
+    const collectionQuery = `collectionKey=${encodeURIComponent(body.collectionKey)}`;
+    let status=body.status;
+    for(let attempt=0; ['READY','RUNNING','TIMING-OUT','ABORTING'].includes(status) && attempt<120; attempt++){
       await new Promise(resolve=>setTimeout(resolve,2000));
-      const response=await fetch(`/api/apify?action=status&runId=${encodeURIComponent(runId)}`); const state=await response.json().catch(()=>({}));
+      const response=await fetch(`/api/apify?action=status&${collectionQuery}`); const state=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(state.error||`Apify status failed (${response.status})`); status=state.status;
     }
     if(status!=='SUCCEEDED') throw new Error(`اجرای Apify با وضعیت ${status||'UNKNOWN'} پایان یافت.`);
-    const result=await fetch(`/api/apify?action=results&runId=${encodeURIComponent(runId)}&limit=500`); const dataset=await result.json().catch(()=>({}));
+    const result=await fetch(`/api/apify?action=results&${collectionQuery}&limit=500`); const dataset=await result.json().catch(()=>({}));
     if(!result.ok) throw new Error(dataset.error||`Apify dataset failed (${result.status})`); return dataset.items||[];
   } catch (error) {
     if (error instanceof TypeError) throw new Error('ارتباط با سرویس جمع‌آوری داده برقرار نشد. Cloudflare Pages Function /api/apify در دسترس نیست.');
@@ -102,13 +104,14 @@ async function startAndCollectApifyRun(payload) {
 export async function fetchInstagramProfiles(apiToken, usernames) {
   const normalizedUsernames = usernames.map(normalizeInstagramHandle).filter((name) => /^[A-Za-z0-9._-]+$/.test(name));
   if (!normalizedUsernames.length) return [];
-  const results = await runApifyActor(
+  const results = [];
+  for (const username of [...new Set(normalizedUsernames.map(value => value.toLowerCase()))]) results.push(...await runApifyActor(
     apiToken,
     'apify~instagram-profile-scraper',
     {
-      usernames: normalizedUsernames,
+      usernames: [username],
     },
-  );
+  ));
   return results;
 }
 
@@ -117,11 +120,13 @@ export async function fetchInstagramProfiles(apiToken, usernames) {
 export async function fetchInstagramPosts(apiToken, usernames, resultsLimit = 30) {
   const normalizedUsernames = usernames.map(normalizeInstagramHandle).filter((name) => /^[A-Za-z0-9._-]+$/.test(name));
   if (!normalizedUsernames.length) return [];
-  return runApifyActor(apiToken, 'apify~instagram-scraper', {
-    directUrls: normalizedUsernames.map((name) => `https://www.instagram.com/${name}/`),
+  const results = [];
+  for (const username of [...new Set(normalizedUsernames.map(value => value.toLowerCase()))]) results.push(...await runApifyActor(apiToken, 'apify~instagram-scraper', {
+    directUrls: [`https://www.instagram.com/${username}/`],
     resultsLimit,
     resultsType: 'posts',
-  });
+  }));
+  return results;
 }
 
 export function summarizeInstagramPosts(posts = [], followers = 0) {
@@ -199,4 +204,20 @@ export function postOwnerHandle(post) {
   if (explicit) return normalizeInstagramHandle(explicit).toLowerCase();
   const candidate = normalizeInstagramHandle(post?.profileUrl || post?.inputUrl || '').toLowerCase();
   return ['p', 'reel', 'reels', 'tv', 'explore'].includes(candidate) ? '' : candidate;
+}
+
+/** Import historical report caches without starting any paid Actor. */
+export async function importLegacyInstagram(profiles, posts, handles) {
+  for (const username of handles) {
+    const profile = profiles.filter(item => normalizeInstagramHandle(item.username).toLowerCase() === username);
+    const resources = [
+      ['apify~instagram-profile-scraper', { usernames: [username] }, profile],
+      ['apify~instagram-scraper', { directUrls: [`https://www.instagram.com/${username}/`], resultsLimit: 30, resultsType: 'posts' }, posts.filter(item => postOwnerHandle(item) === username)],
+    ];
+    for (const [actorId, input, legacyItems] of resources) {
+      if (!legacyItems.length) continue;
+      const response = await fetch('/api/apify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ actorId, input, legacyItems }) });
+      if (!response.ok) throw new Error('انتقال داده قبلی به مخزن دائمی ناموفق بود؛ دریافت پولی جدید انجام نشد.');
+    }
+  }
 }

@@ -51,7 +51,8 @@ const DEFAULT_TARGET = {
   category: '',
   location: '',
   audienceLanguage: 'fa',
-  marketResearchMode: 'hybrid',
+  marketResearchMode: 'online',
+  optionalChannels: [],
   instagramHandle: '',
   website: '',
   linkedin: '',
@@ -61,7 +62,7 @@ const DEFAULT_TARGET = {
   telegram: '',
 };
 
-export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
+export default function ConfigForm({ onSubmit, loading, onLoadProject, onSaveDraft, initialDraft }) {
   const { language, setLanguage, t, dir } = useLanguage();
   const loadSaved = () => {
     try {
@@ -72,7 +73,9 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     }
   };
 
-  const saved = loadSaved();
+  const saved = initialDraft ? { ...initialDraft, settings: { routerModel: initialDraft.aiConfig?.model, routerFallbackModels: initialDraft.aiConfig?.fallbackModels } } : loadSaved();
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftMessage, setDraftMessage] = useState('');
 
   const [target, setTarget] = useState({
     ...DEFAULT_TARGET,
@@ -86,9 +89,18 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
     saved?.target?.industryBriefing || '',
   );
   const [industryIntelligence, setIndustryIntelligence] = useState(
-    saved?.target?.industryIntelligence || null,
+    saved?.industryIntelligence || saved?.target?.industryIntelligence || null,
   );
   const [projects, setProjects] = useState([]);
+  const [openingProject, setOpeningProject] = useState(null);
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const openProject = async (id) => {
+    if (openingProject) return;
+    setOpeningProject(id); setProjectLoadError('');
+    try { await onLoadProject(id); }
+    catch (error) { setProjectLoadError(error.message || 'بازیابی پیش‌نویس ناموفق بود.'); }
+    finally { setOpeningProject(null); }
+  };
   const [pendingDelete, setPendingDelete] = useState(null);
   const [inviteBusy, setInviteBusy] = useState(null);
   const [inviteMessage, setInviteMessage] = useState('');
@@ -182,7 +194,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
         setRouterModel((current) =>
           current && normalized.some((item) => item.id === current)
             ? current
-            : '',
+            : normalized[0]?.id || '',
         );
         setRouterFallbackModels((current) => current.filter((id) => normalized.some((item) => item.id === id)));
       })
@@ -249,6 +261,11 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
         ownerEmail = nextEmail;
         ownerName = nextName;
         setProjects((items) => items.map((project) => project.id === projectId ? record : project));
+      }
+      // A recipient on another device cannot read a browser-only snapshot.
+      record = await saveProject({ ...record.snapshot, id: projectId }, record.snapshot._project?.target || {});
+      if (record.persistence !== 'remote') {
+        throw new Error(`دعوت ارسال نشد؛ ابتدا گزارش باید روی سرور ذخیره شود. ${record.persistenceError || ''}`);
       }
       const panelToken = String(record?.snapshot?._project?.ownerAccessToken || '').trim();
       if (!ownerEmail) throw new Error('برای این پروژه ایمیل کارفرما ثبت نشده است.');
@@ -452,6 +469,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
         </p>
       </div>
 
+      {projectLoadError && <div role="alert" className="max-w-3xl mx-auto text-red-300 p-4">{projectLoadError}</div>}
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-6">
         <section className="projects-panel">
           <div className="projects-panel-head">
@@ -472,18 +490,18 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 const ownerEmail = p.snapshot?._project?.ownerEmail || invitation?.recipient || '';
                 return <article className="project-item" key={p.id}>
                   <header className="project-item-head">
-                    <button type="button" className="project-open" onClick={() => onLoadProject(p.id)}>
+                    <button type="button" className="project-open" disabled={Boolean(openingProject)} onClick={() => openProject(p.id)}>
                       <span className="project-mark">{(p.name || 'پ').slice(0, 1)}</span>
-                      <span><b>{p.name}</b><small>{p.industry || 'بدون دسته‌بندی'} · {p.updated_at ? new Date(p.updated_at).toLocaleDateString('fa-IR') : 'تاریخ نامشخص'}</small></span>
+                      <span><b>{openingProject === p.id ? 'در حال بازیابی و ادامه…' : p.name}{p.snapshot?._draft ? ' · پیش‌نویس — ادامه' : ''}</b><small>{p.snapshot?._draft?.error ? `آخرین خطا: ${p.snapshot._draft.error}` : p.industry || 'بدون دسته‌بندی'} · {p.updated_at ? new Date(p.updated_at).toLocaleDateString('fa-IR') : 'تاریخ نامشخص'}</small></span>
                     </button>
                     {pendingDelete === p.id ? (
                       <div className="project-delete-confirm"><span>حذف شود؟</span><button type="button" onClick={() => removeSavedProject(p.id)}>بله، حذف</button><button type="button" onClick={() => setPendingDelete(null)}>انصراف</button></div>
                     ) : <button type="button" className="project-delete" onClick={() => setPendingDelete(p.id)} aria-label={`حذف ${p.name}`}><Trash2 size={16} /></button>}
                   </header>
-                  <section className="project-invitation" aria-label={`دعوت کارفرما برای ${p.name}`}>
+                  {!p.snapshot?._draft && <section className="project-invitation" aria-label={`دعوت کارفرما برای ${p.name}`}>
                     <div className="project-invitation-copy"><Mail size={16} /><span><b>دسترسی کارفرما</b><small>{hasSentInvite ? `دعوت برای ${ownerName} در ${new Date(invitation.lastSentAt).toLocaleDateString('fa-IR')} ارسال شده است.` : 'نام و ایمیل کارفرما را ثبت کنید، سپس لینک اختصاصی را ارسال کنید.'}</small></span></div>
                     {editorOpen ? <div className="project-invitation-actions"><input type="text" value={ownerNameDrafts[p.id] ?? p.snapshot?._project?.target?.ownerName ?? ''} onChange={(e) => setOwnerNameDrafts({ ...ownerNameDrafts, [p.id]: e.target.value })} placeholder="نام کارفرما" aria-label="نام کارفرما" /><input type="email" value={ownerEmailDrafts[p.id] ?? ownerEmail} onChange={(e) => setOwnerEmailDrafts({ ...ownerEmailDrafts, [p.id]: e.target.value })} placeholder="owner@company.com" dir="ltr" aria-label="ایمیل کارفرما" /><button type="button" className="invite-save" onClick={() => handleSaveOwnerEmail(p.id)} disabled={emailSaveBusy === p.id}>{emailSaveBusy === p.id ? 'در حال ذخیره' : 'ذخیره'}</button><button type="button" className="invite-send" onClick={() => handleSendInvite(p.id)} disabled={inviteBusy === p.id || emailSaveBusy === p.id || !(ownerEmailDrafts[p.id] ?? ownerEmail)}><Send size={14} />{inviteBusy === p.id ? 'در حال ارسال' : 'ذخیره و ارسال دعوت'}</button></div> : <button type="button" className="invite-edit" onClick={() => setInvitationEditors((items) => ({ ...items, [p.id]: true }))}><Pencil size={14} />ویرایش یا ارسال مجدد</button>}
-                  </section>
+                  </section>}
                 </article>
               })}
             </div>
@@ -527,11 +545,11 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
               </p>
             </div>
           </div>
-          <div className="rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">Provider فعال: 9Router</div>
+          <div className="rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">Provider فعال: Azure Foundry</div>
           {provider === '9router' && (
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
-                مدل یا Combo فعال 9Router
+                Deployment فعال Azure Foundry
               </label>
               {routerModelsLoading ? (
                 <div className="w-full bg-slate-900/60 border border-slate-600 text-slate-400 rounded-xl px-4 py-3 text-sm">
@@ -565,12 +583,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 <p className="text-red-400 text-xs mt-2">{routerModelsError}</p>
               )}
               <p className="text-slate-500 text-xs mt-2">
-                فقط مدلی را انتخاب کنید که Provider آن در Dashboard خود 9Router
-                متصل است؛ انتخاب مدل `openai/...` بدون credential فعال همین خطا
-                را ایجاد می‌کند.
+                نام Deployment و کلید دسترسی در تنظیمات سرور Azure مشخص می‌شوند.
               </p>
               <p className="text-slate-500 text-xs mt-1" dir="ltr">
-                Endpoint: https://router.vahidafshari.com/v1
+                Endpoint: https://automatune-resource.services.ai.azure.com/openai/v1/responses
               </p>
             </div>
           )}
@@ -594,10 +610,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                   ×
                 </button>
               </header>
-              <p>9Router برای تحلیل این پروژه فعال است. مدل اصلی و جایگزین‌ها همراه پروژه ذخیره می‌شوند.</p>
+              <p>Azure Foundry برای تحلیل این پروژه فعال است. مدل اصلی و جایگزین‌ها همراه پروژه ذخیره می‌شوند.</p>
               {provider === '9router' && (
                 <div className="settings-model-picker">
-                  <label>مدل یا Combo فعال 9Router</label>
+                  <label>Deployment فعال Azure Foundry</label>
                   {routerModelsLoading ? (
                     <div className="modal-field modal-field-muted">
                       در حال دریافت فهرست مدل‌ها…
@@ -629,8 +645,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                     <p className="settings-model-error">{routerModelsError}</p>
                   )}
                   <small>
-                    فقط مدلی را انتخاب کنید که Provider آن در Dashboard 9Router
-                    credential فعال دارد.
+                    Deployment تنظیم‌شده در سرور برای تحلیل استفاده می‌شود.
                   </small>
                 </div>
               )}
@@ -708,8 +723,10 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
             </div>
             <span className="text-white font-semibold">{t.form.target}</span>
           </div>
+          <p className="text-slate-300 text-sm">دامنهٔ پیش‌فرض: وب و اینستاگرام. Google Maps فقط برای کشف کسب‌وکارها استفاده می‌شود.</p>
+          <fieldset className="flex flex-wrap gap-4 text-slate-300 text-sm"><legend>کانال‌های اختیاری تحقیق</legend>{['youtube', 'linkedin', 'reddit'].map(channel => <label key={channel}><input type="checkbox" checked={target.optionalChannels?.includes(channel) || false} onChange={event => setTarget({ ...target, optionalChannels: event.target.checked ? [...(target.optionalChannels || []), channel] : (target.optionalChannels || []).filter(value => value !== channel) })}/> {channel}</label>)}</fieldset>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {['linkedin', 'youtube', 'reddit', 'twitter', 'telegram'].map(
+            {['linkedin', 'youtube', 'reddit'].filter(channel => target.optionalChannels?.includes(channel)).map(
               (channel) => (
                 <input
                   key={channel}
@@ -794,7 +811,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 className="w-full bg-slate-900/60 border border-slate-600 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 placeholder-slate-500 transition-colors"
               />
               <p className="text-slate-500 text-xs mt-2">
-                اختیاری؛ فقط بر اساس شواهد Instagram یا Telegram وارد کنید.
+                اختیاری؛ فقط بر اساس شواهد وب و Instagram وارد کنید.
               </p>
             </div>
           </div>
@@ -846,7 +863,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
             </div>
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
-                دامنه بررسی بازار <span className="text-red-400">*</span>
+                روش کشف کسب‌وکارها <span className="text-red-400">*</span>
               </label>
               <select
                 value={target.marketResearchMode}
@@ -864,7 +881,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
                 <option value="hybrid">ترکیبی — آنلاین و آفلاین</option>
               </select>
               <p className="text-slate-500 text-xs mt-2">
-                این انتخاب مستقیماً queryهای Maps و Instagram را تغییر می‌دهد.
+                این انتخاب روش کشف را تغییر می‌دهد؛ دامنه تحلیل همچنان وب و اینستاگرام است.
               </p>
             </div>
           </div>
@@ -1070,6 +1087,15 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject }) {
 
         {/* Actions */}
         <div className="space-y-3">
+          <button type="button" disabled={draftBusy || !target.name.trim()} className="w-full py-3 bg-slate-700 rounded-xl text-white" onClick={async () => {
+            setDraftBusy(true); setDraftMessage('');
+            try {
+              await onSaveDraft({ target: { ...target, industryBriefing, industryIntelligence, outputLanguage: language }, competitors, industryIntelligence, aiConfig: { model: routerModel.trim(), fallbackModels: routerFallbackModels } });
+              setProjects(await listProjects()); setDraftMessage('پیش‌نویس در دیتابیس ذخیره شد.');
+            } catch (error) { setDraftMessage(error.message); }
+            finally { setDraftBusy(false); }
+          }}>{draftBusy ? 'در حال ذخیره…' : 'ذخیره پیش‌نویس در دیتابیس'}</button>
+          {draftMessage && <p role="status" className="text-slate-300">{draftMessage}</p>}
           <button
             type="submit"
             disabled={!isValid || loading}

@@ -17,7 +17,7 @@ export default function LoadingScreen({
   currentStep,
   message,
   error,
-  onUseMockData, language = 'fa',
+  onUseMockData, onBack, onResume, language = 'fa',
 }) {
   const { t } = useLanguage();
   const [animatedStep, setAnimatedStep] = useState(0);
@@ -56,6 +56,8 @@ export default function LoadingScreen({
             <div className="text-red-400 text-5xl mb-4">⚠️</div>
             <h2 className="text-white text-xl font-bold mb-2">{t.loading.error}</h2>
             <p className="text-red-300 text-sm mb-6 leading-relaxed">{error}</p>
+            {onResume && <button type="button" onClick={onResume} className="w-full mb-3 bg-blue-600 text-white rounded-lg px-4 py-3">ادامه از آخرین بخش ذخیره‌شده</button>}
+            <button type="button" onClick={onBack} className="text-white border border-slate-500 rounded-lg px-4 py-2">بازگشت به آرشیو پیش‌نویس‌ها</button>
             {/* <div className="space-y-3">
               <button
                 onClick={onUseMockData}

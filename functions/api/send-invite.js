@@ -91,6 +91,19 @@ export async function onRequestPost({ request, env }) {
   if (!isEmail(ownerEmail))
     return json({ error: 'مالک گزارش باید یک ایمیل معتبر داشته باشد.' }, 400);
 
+  // Verify the exact emailed link against durable storage before sending.
+  let link;
+  try { link = new URL(panelUrl); } catch { return json({ error: 'لینک پنل معتبر نیست.' }, 400); }
+  if (!env.DB) return json({ error: 'ذخیره‌سازی سرور در دسترس نیست.' }, 503);
+  if (link.origin !== new URL(request.url).origin || link.searchParams.get('panel') !== 'owner'
+      || link.searchParams.get('project') !== body.projectId || !link.searchParams.get('token'))
+    return json({ error: 'لینک پنل معتبر نیست.' }, 400);
+  const stored = await env.DB.prepare('SELECT snapshot FROM projects WHERE id=?1').bind(body.projectId).first();
+  const meta = stored ? JSON.parse(stored.snapshot)?._project : null;
+  if (!meta?.ownerAccessToken || meta.ownerAccessToken !== link.searchParams.get('token')
+      || String(meta.ownerEmail || '').trim().toLowerCase() !== ownerEmail)
+    return json({ error: 'دسترسی کارفرما روی سرور ذخیره نشده است؛ پروژه را ذخیره و دوباره دعوت کنید.' }, 409);
+
   let accessToken;
   try {
     accessToken = await getAccessToken(env);

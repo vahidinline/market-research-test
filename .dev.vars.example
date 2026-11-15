@@ -1,7 +1,13 @@
-VITE_AUTH_EMAIL=your-email@example.com
-VITE_AUTH_PASSWORD=change-this-password
+ROOT_EMAIL=your-email@example.com
+ROOT_PASSWORD=change-this-password
 # Keep provider credentials in Cloudflare Pages Secrets for deployed builds.
 # APIFY_API_KEY=your_apify_token
 APIFY_WEBSITE_ACTOR=apify/website-content-crawler
 NINE_ROUTER_API_KEY=your_9router_api_key
 NINE_ROUTER_BASE_URL=https://router.vahidafshari.com/v1
+
+# Azure Foundry; never use a VITE_ prefix for this secret.
+AI_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=https://automatune-resource.services.ai.azure.com/openai/v1/responses
+AZURE_OPENAI_DEPLOYMENT=gpt-6-astra-1
+AZURE_OPENAI_API_KEY=your_azure_api_key

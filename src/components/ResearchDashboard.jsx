@@ -563,7 +563,7 @@ function Comparison({ data }) {
           title="شکاف عملکردی در همه فاکتورها">
           <p className="rd-cpm-note">
             این جدول شکاف بیزینس هدف را در برابر بهترین رقیب هر فاکتور نشان
-            می‌دهد؛ مقایسه فقط به وب‌سایت و سوشال محدود نیست.
+            می‌دهد؛ مقایسه فقط بر شواهد منتشرشده در کانال‌های منتخب استوار است.
           </p>
           <div className="rd-table">
             <table>
@@ -836,6 +836,7 @@ function DynamicCpm({ data }) {
                                 : `${result.rawScore} از ${criterion.scoring.max}`}
                             </small>
                             {result?.evidence && <p>{result.evidence}</p>}
+                            {arr(result?.evidenceIds).length > 0 && <small>شناسه شواهد در فهرست منابع: {result.evidenceIds.join('، ')} · {row.name}</small>}
                           </div>
                         );
                       })}
@@ -1225,7 +1226,8 @@ function Sources({ data }) {
           </li>
         ))}
       </ol>
-      {!links.size && <Empty />}
+      {arr(data.researchEvidence).length > 0 && <details><summary>شواهد استفاده‌شده در تحلیل ({data.researchEvidence.length})</summary><ol className="rd-sources">{data.researchEvidence.map(item => <li key={item.id}><b>{item.id} · {item.business} · {item.channel}</b>{item.url && <Link href={item.url}>{item.url}</Link>}<p>{item.excerpt}</p></li>)}</ol></details>}
+      {!links.size && !arr(data.researchEvidence).length && <Empty />}
     </Panel>
   );
 }
@@ -1237,6 +1239,7 @@ export default function ResearchDashboard({
   onReset,
   presentationAi,
   onRefreshTopics,
+  onSaveAnalysis,
   readOnly = false,
 }) {
   const { t } = useLanguage();
@@ -1466,7 +1469,7 @@ export default function ResearchDashboard({
         runtime.config,
         data,
         target,
-        presentationOptions,
+        { ...presentationOptions, checkpoint: { chunks: data.analysisChunks || {}, save: onSaveAnalysis } },
       );
       const { exportPresentation } = await import('../utils/presentation.js');
       const output = await exportPresentation(plan, target);
@@ -1534,6 +1537,8 @@ export default function ResearchDashboard({
         ))}
       </nav>
       <main className="rd-main">
+        {data.researchMethodology && <Panel kicker="RESEARCH SCOPE" title="دامنه و کیفیت شواهد"><p>دامنه: {data.researchMethodology.scope?.join('، ')} · {data.researchMethodology.sampleSize} کسب‌وکار بررسی‌شده</p><p>{data.researchMethodology.sampleLimitations}</p><p>نتایج دربارهٔ حضور و ادعاهای منتشرشده در وب و اینستاگرام است؛ سهم بازار یا کیفیت واقعی ارائه خدمات برآورد نشده است.</p>{arr(data.cpmMatrix?.rows).map(row => <p key={row.name}>{row.name}: پوشش شواهد {Math.round((row.coverage || 0) * 100)}٪ {row.comparable === false ? '— شواهد ناکافی برای رتبه‌بندی قابل اتکا' : ''}</p>)}{data.cpmSensitivity && <details><summary>حساسیت رتبه‌بندی به تغییر وزن‌ها</summary><p>تغییر وزن هر فاکتور به اندازه ۱۰ واحد درصد و نرمال‌سازی مجدد؛ فقط برندهای دارای شواهد کافی مقایسه می‌شوند.</p>{data.cpmSensitivity.scenarios.map((scenario, index) => <p key={index}>{scenario.factorId} ({scenario.adjustment > 0 ? '+' : ''}{Math.round(scenario.adjustment * 100)}٪): {scenario.ranking.map(item => item.name).join(' ← ') || 'داده کافی نیست'}</p>)}</details>}</Panel>}
+
         {printingAll
           ? localizedTabs.map(([id, label]) => (
               <section className="rd-print-section" key={id}>

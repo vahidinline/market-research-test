@@ -1,3 +1,4 @@
+import { validateIndicatorEvidence } from './researchEvidence.js';
 const round = (value) => Number(Number(value).toFixed(4));
 const uniqueIds = (items) => new Set(items.map((item) => item.id)).size === items.length;
 const weightSum = (items) => items.reduce((sum, item) => sum + Number(item.weight), 0);
@@ -77,6 +78,7 @@ export function approveCpmModel(model, { operatorEdited = false } = {}) {
     const invalidDestinations = model.factorCandidatePool.filter((candidate) => candidate.status === 'included' && !FIXED_CPM_FACTORS.some((factor) => factor.id === candidate.selectedFactorId));
     if (invalidDestinations.length) throw new Error('محل نهایی بعضی عوامل تأییدشده مشخص نشده است.');
   }
+  if (model.evidencePolicy === 'raw_sources_v1') validateIndicatorEvidence(model, model.evidenceRegistry || []);
   const approved = validateCpmModel(model, { status: 'locked', requireWeights: true });
   return {
     ...approved,
@@ -113,17 +115,27 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
       if (Object.keys(suppliedCriteria).some((id) => !expectedCriterionIds.includes(id))) throw new Error(`معیار اضافه در ${dependent.label} وجود دارد.`);
       const independentScores = {};
       for (const criterion of dependent.independentVariables) {
-        if (!(criterion.id in suppliedCriteria)) throw new Error(`معیار ${criterion.label} برای ${identity.name} در خروجی وجود ندارد.`);
+        if (factor.id !== 'website' || (identity.hasWebsite !== false && identity.hasWebsiteEvidence !== false)) {
+          if (!(criterion.id in suppliedCriteria)) throw new Error(`معیار ${criterion.label} برای ${identity.name} در خروجی وجود ندارد.`);
+        }
         const supplied = suppliedCriteria[criterion.id] || {};
         // A missing website is an observed zero, not missing data. Keeping it
         // as null causes the website factor to become null and positioning maps
         // to drop the entire brand from their dataset.
-        const websiteUnavailable = factor.id === 'website' && identity.hasWebsite === false;
-        const rawScore = websiteUnavailable && supplied.rawScore == null ? 0 : supplied.rawScore ?? null;
+        const websiteUnavailable = factor.id === 'website' && identity.hasWebsite === false && !identity.strictEvidence;
+        const websiteNotAudited = factor.id === 'website' && identity.hasWebsiteEvidence === false && (identity.hasWebsite !== false || identity.strictEvidence);
+        const unsupportedVisual = identity.strictEvidence && /visual|storytelling|layout|بصری|چیدمان|داستان.?گویی/i.test(`${criterion.id} ${criterion.label}`);
+        const rawScore = unsupportedVisual ? null : websiteUnavailable ? 0 : websiteNotAudited ? null : supplied.rawScore ?? null;
+        if (identity.strictEvidence && rawScore != null) {
+          if (identity.evidenceChannels && supplied.evidenceIds?.some(id => factor.id === 'website' ? identity.evidenceChannels[id] !== 'website' : factor.id === 'social' ? identity.evidenceChannels[id] === 'website' : false)) throw new Error('شاهد امتیاز متعلق به کانال این فاکتور نیست.');
+          if (typeof rawScore !== 'number' || !Number.isFinite(rawScore)) throw new Error(`امتیاز ${criterion.id} باید عدد باشد.`);
+          if (!String(supplied.evidence || '').trim() || !Array.isArray(supplied.evidenceIds) || !supplied.evidenceIds.length || supplied.evidenceIds.some(id => !identity.evidenceIds?.includes(id))) throw new Error(`امتیاز ${criterion.id} شاهد معتبر همان برند ندارد.`);
+        }
         independentScores[criterion.id] = {
+          evidenceIds: supplied.evidenceIds || [],
           rawScore,
-          normalizedScore: websiteUnavailable && supplied.rawScore == null ? 0 : normalizeCpmScore(rawScore, criterion.scoring),
-          evidence: supplied.evidence || (websiteUnavailable ? 'وب‌سایت ندارد؛ امتیاز صفر.' : ''),
+          normalizedScore: websiteUnavailable ? 0 : normalizeCpmScore(rawScore, criterion.scoring),
+          evidence: websiteUnavailable ? 'وب‌سایت ندارد؛ امتیاز صفر.' : websiteNotAudited ? 'داده قابل بررسی از وب‌سایت موجود نیست؛ ارزیابی نشده.' : supplied.evidence || '',
           status: rawScore == null ? 'not_available' : 'scored',
         };
       }
@@ -146,7 +158,8 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
   const total = availableWeight
     ? availableFactors.reduce((sum, factor) => sum + factorScores[factor.id].score * Number(factor.weight), 0) / availableWeight
     : null;
-  return { name: identity.name, isTarget: Boolean(identity.isTarget), factorScores, total: total == null ? null : round(total) };
+  const coverage = model.factors.reduce((sum, factor) => sum + Number(factor.weight) * factor.dependentVariables.reduce((inner, dependent) => inner + Number(dependent.weight) * dependent.independentVariables.reduce((covered, criterion) => covered + (factorScores[factor.id].dependentScores[dependent.id].independentScores[criterion.id].rawScore == null ? 0 : Number(criterion.weight)), 0), 0), 0);
+  return { coverage: round(coverage), comparable: coverage >= 0.8, name: identity.name, isTarget: Boolean(identity.isTarget), factorScores, total: total == null ? null : round(total) };
 }
 
 export function calculateCpmMatrix(modelInput, evaluations, identities) {
@@ -171,6 +184,7 @@ export function buildCpmPositioningMaps(model, matrix) {
     const yFactor = factors[yFactorId];
     if (!xFactor || !yFactor) return null;
     const data = matrix.rows.flatMap((row) => {
+      if (row.comparable === false) return [];
       const x = row.factorScores?.[xFactorId]?.score;
       const y = row.factorScores?.[yFactorId]?.score;
       if (x == null || y == null) return [];
@@ -193,4 +207,16 @@ export function buildCpmPositioningMaps(model, matrix) {
       data,
     };
   }).filter(Boolean);
+}
+
+// Show whether small factor-weight changes alter the ranking, using existing
+// scores only. This does not make differently covered samples comparable.
+export function cpmSensitivity(model, rows, delta = 0.1) {
+  const eligible = rows.filter(row => row.comparable !== false && model.factors.every(factor => row.factorScores?.[factor.id]?.score != null));
+  const rank = factors => eligible.map(row => ({ name: row.name, total: round(factors.reduce((sum, factor) => sum + factor.weight * row.factorScores[factor.id].score, 0)) })).sort((a,b) => b.total-a.total);
+  return { delta, baseline: rank(model.factors), scenarios: model.factors.flatMap(changed => [-delta, delta].map(adjustment => {
+    const weights = model.factors.map(factor => ({ ...factor, weight: Math.max(0, factor.weight + (factor.id === changed.id ? adjustment : 0)) }));
+    const total = weights.reduce((sum, factor) => sum + factor.weight, 0);
+    return { factorId: changed.id, adjustment, ranking: rank(weights.map(factor => ({ ...factor, weight: factor.weight / total }))) };
+  })) };
 }
