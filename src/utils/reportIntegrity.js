@@ -1,6 +1,7 @@
+import { reportPositioningMaps } from './positioningMaps.js';
 import { businessEvidence, sanitizeProfileAnalysis } from './researchEvidence.js';
 import { normalizeInstagramHandle } from './apify.js';
-import { buildCpmPositioningMaps, calculateCpmMatrix } from './cpm.js';
+import { calculateCpmMatrix } from './cpm.js';
 
 const postUrl = (post) => post?.url || post?.postUrl || (post?.shortCode ? `https://www.instagram.com/p/${post.shortCode}/` : null);
 const postTitle = (post) => String(post?.caption || post?.text || '').trim().slice(0, 100) || 'محتوای برتر در نمونه بررسی‌شده';
@@ -62,7 +63,7 @@ export function enforceReportIntegrity(analysis, profilesData) {
         ...(hasWebsiteEvidence ? checked.websiteAnalytics || {} : {}),
         status: websiteStatus,
         uxScore: hasWebsiteEvidence ? checked.websiteAnalytics?.uxScore ?? null : null,
-        narrative: hasWebsiteEvidence ? competitor.websiteAnalytics?.narrative || '' : websiteUrl ? 'داده کافی برای ارزیابی وب‌سایت موجود نیست.' : result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ نبود وب‌سایت احراز نشده است.' : 'این کسب‌وکار وب‌سایت ندارد.',
+        narrative: hasWebsiteEvidence ? competitor.websiteAnalytics?.narrative || '' : websiteUrl ? 'داده کافی برای ارزیابی وب‌سایت موجود نیست.' : result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ نمی‌توان گفت این کسب‌وکار وب‌سایت ندارد.' : 'این کسب‌وکار وب‌سایت ندارد.',
         mobileFriendly: result.researchMethodology ? null : hasWebsiteEvidence ? website ? Boolean(website.mobileMeta) : competitor.websiteAnalytics?.mobileFriendly ?? null : null,
         onlineBooking: hasWebsiteEvidence ? website ? Boolean(website.hasBooking) : competitor.websiteAnalytics?.onlineBooking ?? null : null,
         liveSupport: null,
@@ -103,6 +104,7 @@ export function enforceReportIntegrity(analysis, profilesData) {
       name: business.name,
       isTarget: index === 0,
       strictEvidence: Boolean(result.researchMethodology),
+      websiteEvidence: evidenceFor(business),
       evidenceIds: evidenceFor(business).map(item => item.id),
       evidenceChannels: Object.fromEntries(evidenceFor(business).map(item => [item.id, item.channel])),
       hasWebsite: Boolean(String(business.website || '').trim()),
@@ -119,7 +121,7 @@ export function enforceReportIntegrity(analysis, profilesData) {
       const state = absent ? result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ ارزیابی نشده است.' : 'وب‌سایت ندارد؛ امتیاز صفر.' : score == null ? 'وب‌سایت ثبت شده، اما شواهد کافی برای امتیازدهی موجود نیست.' : `امتیاز وب‌سایت بر اساس داده بررسی‌شده: ${Math.round(score * 100)}/100.`;
       return `${business.name}: ${state}`;
     }).join(' ') };
-    result.positioningMaps = buildCpmPositioningMaps(result.cpmModel, result.cpmMatrix);
+    result.positioningMaps = reportPositioningMaps(result);
   }
   const rows = result.cpmMatrix?.rows || [];
   if (!result.cpmModel) {

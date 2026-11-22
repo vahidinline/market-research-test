@@ -1,3 +1,4 @@
+import { restoreSocialCriteria, needsDigitalCriteriaReview } from './utils/socialCriteria.js';
 import { researchScope } from './utils/researchPolicy.js';
 import { shouldResumeDraft, normalizeDraft } from './utils/draftResume.js';
 import { useEffect, useRef, useState } from 'react';
@@ -59,7 +60,10 @@ export default function App() {
   const persistDraft = async () => {
     const draft = activeDraft.current;
     if (!draft) return;
-    const saved = await saveProject({ id: draft.id, _project: draft.projectMeta, _draft: draft.data }, draft.data.form.target);
+    setDraftNotice('در حال ذخیره پیش‌نویس...');
+    let saved;
+    try { saved = await saveProject({ id: draft.id, _project: draft.projectMeta, _draft: draft.data }, draft.data.form.target); }
+    catch (error) { setDraftNotice('ذخیره آخرین تغییرات تأیید نشد؛ این صفحه را باز نگه دارید.'); throw error; }
     draft.projectMeta = saved.snapshot._project;
     if (saved.persistence !== 'remote') {
       setDraftNotice('ذخیره در دیتابیس ناموفق بود؛ نسخه مرورگر حفظ شد.');
@@ -130,9 +134,13 @@ export default function App() {
       if (draft.stage === 'form') draft.stage = 'collecting';
       await persistDraft();
       if (draft.preliminary) {
-        const context = { provider, aiConfig, target: draft.form.target, competitors, profilesData: draft.profilesData, preliminary: draft.preliminary };
+        const savedModel = draft.approvedModel || draft.preliminary.cpmModel;
+        const needsReview = needsDigitalCriteriaReview(savedModel);
+        const preliminary = needsReview ? { ...draft.preliminary, cpmModel: { ...restoreSocialCriteria(savedModel), status: 'proposed' } } : draft.preliminary;
+        const context = { provider, aiConfig, target: draft.form.target, competitors, profilesData: draft.profilesData, preliminary };
         setPendingResearch(context);
-        if (draft.approvedModel) { await handleApproveCpm(draft.approvedModel, context); return; }
+        if (draft.approvedModel && !needsReview) { await handleApproveCpm(draft.approvedModel, context); return; }
+        if (needsReview) setDraftNotice('چارچوب سوشال و وب‌سایت مطابق نمونه مرجع اصلاح شد؛ مدل را بررسی و تأیید کنید تا امتیازها دوباره محاسبه شوند.');
         setAppState(STATE.CPM_APPROVAL);
         return;
       }

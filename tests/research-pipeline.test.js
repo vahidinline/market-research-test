@@ -15,7 +15,7 @@ test('full methodology and scoring resume after a late failure without regenerat
     let result;
     if (prompt.includes('Task:\nاین کسب‌وکار هدف') || prompt.includes('Task:\nاین رقیب')) result = { competitor: { services: ['offer'], strengths: ['published offer'], weaknesses: ['limited evidence'], instagramAnalytics: {}, websiteAnalytics: {} } };
     else if (prompt.includes('Task:\nSummarize')) result = { summary: 'Observed web and Instagram competition' };
-    else if (prompt.includes('Task:\nتحلیل صنعت و SWOT')) result = { industryOverview: 'Digital competition', swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] } };
+    else if (prompt.includes('Task:\nتحلیل صنعت و SWOT')) result = { industryOverview: 'Digital competition', sourceIds: ['b1:e1'], swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] } };
     else if (prompt.includes('Task:\nیک مدل CPM')) { modelCalls++; result = { cpmModel: model() }; }
     else if (prompt.includes('Task:\nدقیقاً ۶ عامل')) result = { factorCandidatePool: Array.from({ length: 6 }, (_, index) => ({ id: `candidate_${index}`, label: `Published ${index}`, status: 'excluded', classificationReason: 'Already covered', proposedCriterion: criterion(`candidate_${index}`, 'b1:e2') })) };
     else if (prompt.includes('Task:\nScore only')) {
@@ -23,7 +23,9 @@ test('full methodology and scoring resume after a late failure without regenerat
       const data = JSON.parse(prompt.split('\n\nData:\n')[1].split('\n\nExact output structure:')[0]);
       const factor = data.factor;
       result = { evaluation: { factorScores: { [factor.id]: { dependentScores: Object.fromEntries(factor.dependentVariables.map(dependent => [dependent.id, { independentScores: Object.fromEntries(dependent.independentVariables.map(item => [item.id, { rawScore: 1, evidence: 'Published evidence', evidenceIds: [factor.id === 'social' ? 'e1' : 'e2'] }])) }])) } } } };
-    } else if (prompt.includes('Task:\nبر اساس مدل CPM قفل')) result = { factorOverviews: Object.fromEntries(factors.map(([id]) => [id, 'Based on observed evidence'])) };
+    } else if (prompt.includes('Factor:')) { const rows = JSON.parse(prompt.split('\nData:\n')[1].split('\nOutput:')[0]); result = { summary: 'Based on observed evidence', factIds: rows.slice(0,3).map(row => row.factId) }; }
+    else if (prompt.includes('Rewrite each supplied text')) { result = { edits: JSON.parse(prompt.split('\nTexts:\n')[1].split('\nOutput:')[0]) }; }
+    else if (prompt.includes('Check each proposed edit')) { result = { approvedIds: JSON.parse(prompt.split('\nOriginals:\n')[1].split('\nEdits:')[0]).map(row => row.id) }; }
     else if (prompt.includes('Task:\nبر اساس تحلیل صنعت')) {
       if (failing) return Response.json({ error: 'simulated final-stage failure', retryable: false }, { status: 400 });
       result = { recommendations: Array.from({ length: 5 }, (_, index) => ({ priority: index + 1, title: 'Improve published offer', actionSteps: ['Review evidence'] })) };
@@ -41,7 +43,7 @@ test('full methodology and scoring resume after a late failure without regenerat
   const methodology = { chunks: {}, save: async () => ({ persistence: 'remote' }), saveIndicators: async (value, status) => versions.push({ value: structuredClone(value), status }) };
   const preliminary = await prepareResearchMethodology('9router', { model: 'test' }, target, competitors, profilesData, () => {}, methodology);
   assert.equal(modelCalls, 1);
-  assert.equal(preliminary.cpmModel.factors[0].dependentVariables[0].independentVariables[0].id, 'social_criterion');
+  assert.equal(preliminary.cpmModel.factors[0].dependentVariables[0].independentVariables[0].id, 'visual_quality');
   const approved = approveCpmModel(preliminary.cpmModel);
   const completion = { chunks: {}, save: async () => ({ persistence: 'remote' }) };
   const run = () => completeResearchWithApprovedCpm('9router', { model: 'test' }, target, competitors, profilesData, preliminary, approved, () => {}, completion);
@@ -50,7 +52,8 @@ test('full methodology and scoring resume after a late failure without regenerat
   failing = false;
   const result = enforceReportIntegrity(await run(), profilesData);
   assert.equal(modelCalls, 1); assert.equal(scoreCalls, 8);
-  assert.equal(result.cpmMatrix.rows[0].coverage, 1);
+  assert.ok(result.cpmMatrix.rows[0].coverage > 0 && result.cpmMatrix.rows[0].coverage < 1); // Visual standards remain visible but unscored without images.
+  assert.equal(result.cpmMatrix.rows[0].factorScores.social.dependentScores.social_content_quality.independentScores.visual_quality.status, 'needs_visual_review');
   const reloaded = enforceReportIntegrity(structuredClone(result), { target: { name: target.name, website: target.website, instagramHandle: target.instagramHandle }, competitors: competitors.map(item => ({ name: item.name, website: item.website, instagramHandle: item.instagramHandle })) });
   assert.equal(reloaded.cpmMatrix.rows[0].total, result.cpmMatrix.rows[0].total);
   assert.equal(result.targetAnalysis.websiteAnalytics.uxScore, null);

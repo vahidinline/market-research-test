@@ -1,3 +1,29 @@
+// Bound decompressed data too, so compression cannot bypass the request limit.
+async function readProjectBody(request) {
+  const encoding = request.headers.get('x-project-encoding');
+  if (encoding && encoding !== 'gzip') throw Object.assign(new Error('Unsupported project encoding'), { status: 415 });
+  const stream = encoding === 'gzip' ? request.body.pipeThrough(new DecompressionStream('gzip')) : request.body;
+  if (!stream) throw Object.assign(new Error('Project body is required'), { status: 400 });
+  const reader = stream.getReader();
+  const chunks = []; let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 64 * 1024 * 1024) {
+        void reader.cancel().catch(() => {});
+        throw Object.assign(new Error('Project exceeds 64 MiB'), { status: 413 });
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) { if (!error.status) error.status = 400; throw error; }
+  finally { reader.releaseLock(); }
+}
+
 const stable = (value) => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
 async function collectionKey(actor, input) {
   const bytes = new TextEncoder().encode(JSON.stringify(stable({ actor, input })));
@@ -297,7 +323,9 @@ async function projects(request, env, url) {
     });
   }
   if (request.method === 'POST') {
-    const body = await request.json();
+    let body;
+    try { body = await readProjectBody(request); } catch (error) { return json({ error: error.message }, error.status || 400); }
+    if (!body?.name || !body?.snapshot) return json({ error: 'name and snapshot are required' }, 400);
     const id = body.id || crypto.randomUUID();
     const existing = await env.DB.prepare('SELECT id FROM projects WHERE id=?1').bind(id).first();
     if (existing && !(await can(id, 'edit'))) return json({ error: 'دسترسی ویرایش ندارید.' }, 403);
@@ -433,7 +461,36 @@ async function sendInvite(request, env) {
   return json({ ok: true, result: data });
 }
 
-const seoAudit = (html, target, response) => {
+// Missing, blocked and untested are different states. Never infer file absence
+// from the absence of a link in the page HTML.
+export async function discoverSeoFiles(target, fetcher = fetch) {
+  const origin = new URL(target).origin;
+  const probe = async (url, kind) => {
+    try {
+      const response = await fetcher(url, { headers: { 'user-agent': 'MarketResearchBot/0.0.2' }, signal: AbortSignal.timeout(8000), redirect: 'follow' });
+      const body = (await response.text()).slice(0, 1000000);
+      const valid = kind === 'robots'
+        ? !/<(?:html|!doctype)/i.test(body) && /^\s*(?:user-agent|sitemap)\s*:/im.test(body)
+        : /<(?:[\w-]+:)?(?:urlset|sitemapindex)\b/i.test(body) && !/<html\b/i.test(body);
+      return { url, finalUrl: response.url || url, status: response.status,
+        present: response.ok && valid ? true : [404, 410].includes(response.status) ? false : null,
+        ...(kind === 'robots' && response.ok && valid ? { body } : {}) };
+    } catch { return { url, status: null, present: null }; }
+  };
+  const robots = await probe(`${origin}/robots.txt`, 'robots');
+  const declared = [...(robots.body || '').matchAll(/^\s*Sitemap:\s*(\S+)/gim)]
+    .map(match => { try { return new URL(match[1], origin); } catch { return null; } })
+    .filter(url => url && url.origin === origin).map(url => url.href);
+  const candidates = [...new Set([...declared.slice(0, 3), `${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`])];
+  const attempts = await Promise.all(candidates.map(url => probe(url, 'sitemap')));
+  const found = attempts.find(item => item.present === true);
+  // Even 404s on common paths do not prove no sitemap exists elsewhere.
+  const sitemap = { present: found ? true : null, url: found?.url || null, attempts };
+  delete robots.body;
+  return { robots, sitemap };
+}
+
+export const seoAudit = (html, target, response, discovery = {}) => {
   const count = (pattern) => (html.match(pattern) || []).length;
   const title =
     html
@@ -456,13 +513,13 @@ const seoAudit = (html, target, response) => {
   const lang = /<html[^>]+\blang=["'][^"']+["']/i.test(html);
   const schema =
     /application\/ld\+json|itemtype=["']https?:\/\/schema\.org/i.test(html);
-  const robots = /robots\.txt/i.test(html);
-  const sitemap = /sitemap\.xml/i.test(html);
+  const robots = discovery.robots?.present ?? null;
+  const sitemap = discovery.sitemap?.present ?? null;
   const indexable =
     !/<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*noindex/i.test(html);
   const internalLinks = count(/<a\b[^>]+href=["'][^"']+["']/gi);
   const score = (items) =>
-    Math.round((items.filter(Boolean).length / items.length) * 100);
+    items.some(item => item != null) ? (items.filter(item => item === true).length / items.filter(item => item != null).length) * 100 : null;
   const onPage = score([
     Boolean(title),
     Boolean(description),
@@ -482,6 +539,9 @@ const seoAudit = (html, target, response) => {
     sitemap,
   ]);
   return {
+    version: 2,
+    auditedAt: new Date().toISOString(),
+    discovery,
     onPage,
     technical,
     offPage: null,
@@ -512,6 +572,7 @@ async function website(request) {
     const target = new URL(/^https?:/i.test(url) ? url : `https://${url}`);
     const response = await fetch(target, {
       headers: { 'user-agent': 'MarketResearchBot/0.0.2' },
+      signal: AbortSignal.timeout(15000),
     });
     const html = await response.text();
     const text = html
@@ -520,9 +581,11 @@ async function website(request) {
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    const seo = seoAudit(html, target, response);
+    const finalTarget = new URL(response.url || target);
+    const discovery = await discoverSeoFiles(finalTarget);
+    const seo = seoAudit(html, finalTarget, response, discovery);
     return json({
-      url: target.toString(),
+      url: finalTarget.toString(),
       status: response.status,
       title: seo.checks.title,
       text: text.slice(0, 12000),
@@ -600,8 +663,9 @@ async function azureAi(request, env) {
     status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store',
       ...(data.retryAfterSeconds ? { 'retry-after': String(data.retryAfterSeconds) } : {}) },
   });
-  if (!env.AZURE_OPENAI_API_KEY || !deployment || !endpoint)
-    return reply({ error: 'Azure endpoint, deployment and API key must be configured on the server.', retryable: false }, 503);
+  const missingSettings = ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_DEPLOYMENT', 'AZURE_OPENAI_ENDPOINT'].filter(name => !String(env[name] || '').trim());
+  if (missingSettings.length)
+    return reply({ error: `تنظیمات Azure روی سرور ناقص است: ${missingSettings.join(', ')}.`, code: 'AI_CONFIGURATION_MISSING', missingSettings, retryable: false }, 503);
   if (request.method === 'GET') return reply({ ok: true, provider: 'azure', models: [{ id: deployment }] });
   if (request.method !== 'POST') return reply({ error: 'POST required', retryable: false }, 405);
   const { prompt, maxOutputTokens = 7000, inputBudgetBytes = 56000 } = await request.json();

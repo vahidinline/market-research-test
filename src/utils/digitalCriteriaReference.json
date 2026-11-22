@@ -1,0 +1,243 @@
+[
+  {
+    "id": "social",
+    "label": "سوشال",
+    "weight": 0.25,
+    "definition": "ارزیابی چندبعدی کیفیت و اثربخشی حضور برند در کانال‌های اجتماعی منتخب.",
+    "dependentVariables": [
+      {
+        "id": "social_content_quality",
+        "label": "کیفیت محتوا",
+        "weight": 0.25,
+        "reason": "شاخص ثابت ارزیابی Social در پروژه",
+        "independentVariables": [
+          {
+            "id": "visual_quality",
+            "label": "کیفیت محتوای بصری",
+            "definition": "سنجش کیفیت محتوای بصری در کانال‌های اجتماعی منتخب",
+            "weight": 0.3333,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "written_quality",
+            "label": "کیفیت محتوای نوشتاری",
+            "definition": "سنجش کیفیت محتوای نوشتاری در کانال‌های اجتماعی منتخب",
+            "weight": 0.3333,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "candidate_creative_script_visual_quality",
+            "label": "کیفیت سناریونویسی و خلاقیت بصری محتوای ویدیویی",
+            "definition": "ارزیابی جذابیت سناریو و کیفیت ساخت ویدیوها",
+            "weight": 0.3334,
+            "reason": "سنجش توانمندی تیم تولید محتوای آژانس",
+            "evidenceSource": "پایش کیفی پست‌های اینستاگرام توسط اپراتور",
+            "scoring": {
+              "type": "binary",
+              "min": 0,
+              "max": 1,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "social_page_standards",
+        "label": "استانداردهای صفحه",
+        "weight": 0.25,
+        "reason": "شاخص ثابت ارزیابی Social در پروژه",
+        "independentVariables": [
+          {
+            "id": "profile_standards",
+            "label": "استانداردهای پروفایل و صفحه",
+            "definition": "سنجش استانداردهای پروفایل و صفحه در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "channel_structure",
+            "label": "ساختار و یکپارچگی کانال",
+            "definition": "سنجش ساختار و یکپارچگی کانال در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "social_content_strategy",
+        "label": "استراتژی محتوا",
+        "weight": 0.25,
+        "reason": "شاخص ثابت ارزیابی Social در پروژه",
+        "independentVariables": [
+          {
+            "id": "content_pillars",
+            "label": "ستون‌ها و تنوع محتوا",
+            "definition": "سنجش ستون‌ها و تنوع محتوا در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "audience_fit",
+            "label": "تناسب محتوا با مخاطب و سفر مشتری",
+            "definition": "سنجش تناسب محتوا با مخاطب و سفر مشتری در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "social_performance_trust",
+        "label": "عملکرد، تعامل و اعتماد",
+        "weight": 0.25,
+        "reason": "شاخص ثابت ارزیابی Social در پروژه",
+        "independentVariables": [
+          {
+            "id": "engagement_performance",
+            "label": "تعامل و عملکرد کانال",
+            "definition": "سنجش تعامل و عملکرد کانال در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "trust_credibility",
+            "label": "اعتماد و اعتبار برند",
+            "definition": "سنجش اعتماد و اعتبار برند در کانال‌های اجتماعی منتخب",
+            "weight": 0.5,
+            "reason": "معیار قابل مشاهده و قابل استناد",
+            "evidenceSource": "social_channel_audit",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "website",
+    "label": "وب‌سایت",
+    "weight": 0.25,
+    "definition": "سنجش عملکرد فنی، سئو و قابلیت‌های تبدیل مخاطب در وب‌سایت.",
+    "dependentVariables": [
+      {
+        "id": "seo_performance",
+        "label": "عملکرد سئو و رتبه‌بندی",
+        "weight": 0.5,
+        "independentVariables": [
+          {
+            "id": "technical_seo",
+            "label": "شاخص‌های سئوی فنی و داخلی",
+            "weight": 1,
+            "evidenceSource": "گزارش آنالیز سئوی سایت",
+            "scoring": {
+              "type": "range",
+              "min": 0,
+              "max": 3,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "supplemental_website",
+        "label": "تبدیل و تجربه کاربر",
+        "weight": 0.5,
+        "reason": "افزوده‌شده پس از بررسی اپراتور",
+        "independentVariables": [
+          {
+            "id": "candidate_website_ux_lead_tools",
+            "label": "سهولت رزرو مشاوره و ابزارهای دریافت سرنخ",
+            "definition": "ارزیابی وجود و عملکرد ابزارهای ارتباط مستقیم",
+            "weight": 0.5,
+            "reason": "ارتقای تجربه کاربر در درخواست مشاوره آنلاین",
+            "evidenceSource": "تست دستی فرم‌ها و ابزارهای ارتباطی وب‌سایت",
+            "scoring": {
+              "type": "binary",
+              "min": 0,
+              "max": 1,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          },
+          {
+            "id": "candidate_technical_seo_compliance",
+            "label": "تطبیق فنی سئو و اعتبار زیرساخت وب‌سایت",
+            "definition": "سنجش سلامت فنی، داشتن نقشه سایت و HTTPS",
+            "weight": 0.5,
+            "reason": "نمایش استانداردهای فنی خود آژانس به عنوان نمونه‌کار",
+            "evidenceSource": "تحلیل گزارش‌های ابزارهای سئو توسط اپراتور",
+            "scoring": {
+              "type": "binary",
+              "min": 0,
+              "max": 1,
+              "normalization": "min-max",
+              "rubricLevels": []
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

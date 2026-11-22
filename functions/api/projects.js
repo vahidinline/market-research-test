@@ -1,3 +1,4 @@
+import { readProjectBody } from '../lib/project-body.js';
 // Cloudflare Pages Function. Bind a D1 database as DB in wrangler.jsonc.
 // The frontend falls back to localStorage when this endpoint is unavailable locally.
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -27,7 +28,8 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const body = await request.json();
+  let body;
+  try { body = await readProjectBody(request); } catch (error) { return json({ error: error.message }, error.status || 400); }
   if (!body?.name || !body?.snapshot) return json({ error: 'name and snapshot are required' }, 400);
   if (!env.DB) return json({ error: 'D1 is not configured' }, 503);
   const id = body.id || crypto.randomUUID();

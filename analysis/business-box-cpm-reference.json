@@ -1,0 +1,586 @@
+{
+  "sourceFile": "market-research-interoperable-Business-Box (2).json",
+  "sourceExportedAt": "2026-11-17T10:26:24.936Z",
+  "note": "Reference extracted verbatim from the user-supplied report; candidate_* criteria are approved additions for this project, not automatically universal fixed standards.",
+  "cpmModel": {
+    "version": 1,
+    "framework": "four_factor_v1",
+    "status": "locked",
+    "rationale": "مدل ارزیابی رقابتی جهت سنجش موقعیت دیجیتال بیزنس باکس در صنعت تبلیغات.",
+    "decisionBasis": [
+      {
+        "observation": "تفاوت شدید نرخ تعامل رقبا در اینستاگرام و سئوی فنی وب‌سایت‌ها.",
+        "source": "داده‌های تحلیلی اینستاگرام و سئوی وب‌سایت بیزنس باکس و رقبا.",
+        "implication": "ضرورت وزن‌دهی یکسان به چهار رکن اصلی جهت ارزیابی دقیق متوازن."
+      }
+    ],
+    "assumptions": [
+      "وزن فاکتورها یکسان و مجموع اوزان تمام سطوح برابر یک است."
+    ],
+    "factors": [
+      {
+        "id": "social",
+        "label": "سوشال",
+        "weight": 0.25,
+        "definition": "ارزیابی چندبعدی کیفیت و اثربخشی حضور برند در کانال‌های اجتماعی منتخب.",
+        "dependentVariables": [
+          {
+            "id": "social_content_quality",
+            "label": "کیفیت محتوا",
+            "weight": 0.25,
+            "reason": "شاخص ثابت ارزیابی Social در پروژه",
+            "independentVariables": [
+              {
+                "id": "visual_quality",
+                "label": "کیفیت محتوای بصری",
+                "definition": "سنجش کیفیت محتوای بصری در کانال‌های اجتماعی منتخب",
+                "weight": 0.3333,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "written_quality",
+                "label": "کیفیت محتوای نوشتاری",
+                "definition": "سنجش کیفیت محتوای نوشتاری در کانال‌های اجتماعی منتخب",
+                "weight": 0.3333,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "candidate_creative_script_visual_quality",
+                "label": "کیفیت سناریونویسی و خلاقیت بصری محتوای ویدیویی",
+                "definition": "ارزیابی جذابیت سناریو و کیفیت ساخت ویدیوها",
+                "weight": 0.3334,
+                "reason": "سنجش توانمندی تیم تولید محتوای آژانس",
+                "evidenceSource": "پایش کیفی پست‌های اینستاگرام توسط اپراتور",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "social_page_standards",
+            "label": "استانداردهای صفحه",
+            "weight": 0.25,
+            "reason": "شاخص ثابت ارزیابی Social در پروژه",
+            "independentVariables": [
+              {
+                "id": "profile_standards",
+                "label": "استانداردهای پروفایل و صفحه",
+                "definition": "سنجش استانداردهای پروفایل و صفحه در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "channel_structure",
+                "label": "ساختار و یکپارچگی کانال",
+                "definition": "سنجش ساختار و یکپارچگی کانال در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "social_content_strategy",
+            "label": "استراتژی محتوا",
+            "weight": 0.25,
+            "reason": "شاخص ثابت ارزیابی Social در پروژه",
+            "independentVariables": [
+              {
+                "id": "content_pillars",
+                "label": "ستون‌ها و تنوع محتوا",
+                "definition": "سنجش ستون‌ها و تنوع محتوا در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "audience_fit",
+                "label": "تناسب محتوا با مخاطب و سفر مشتری",
+                "definition": "سنجش تناسب محتوا با مخاطب و سفر مشتری در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "social_performance_trust",
+            "label": "عملکرد، تعامل و اعتماد",
+            "weight": 0.25,
+            "reason": "شاخص ثابت ارزیابی Social در پروژه",
+            "independentVariables": [
+              {
+                "id": "engagement_performance",
+                "label": "تعامل و عملکرد کانال",
+                "definition": "سنجش تعامل و عملکرد کانال در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "trust_credibility",
+                "label": "اعتماد و اعتبار برند",
+                "definition": "سنجش اعتماد و اعتبار برند در کانال‌های اجتماعی منتخب",
+                "weight": 0.5,
+                "reason": "معیار قابل مشاهده و قابل استناد",
+                "evidenceSource": "social_channel_audit",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "website",
+        "label": "وب‌سایت",
+        "weight": 0.25,
+        "definition": "سنجش عملکرد فنی، سئو و قابلیت‌های تبدیل مخاطب در وب‌سایت.",
+        "dependentVariables": [
+          {
+            "id": "seo_performance",
+            "label": "عملکرد سئو و رتبه‌بندی",
+            "weight": 0.5,
+            "independentVariables": [
+              {
+                "id": "technical_seo",
+                "label": "شاخص‌های سئوی فنی و داخلی",
+                "weight": 1,
+                "evidenceSource": "گزارش آنالیز سئوی سایت",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "supplemental_website",
+            "label": "تبدیل و تجربه کاربر",
+            "weight": 0.5,
+            "reason": "افزوده‌شده پس از بررسی اپراتور",
+            "independentVariables": [
+              {
+                "id": "candidate_website_ux_lead_tools",
+                "label": "سهولت رزرو مشاوره و ابزارهای دریافت سرنخ",
+                "definition": "ارزیابی وجود و عملکرد ابزارهای ارتباط مستقیم",
+                "weight": 0.5,
+                "reason": "ارتقای تجربه کاربر در درخواست مشاوره آنلاین",
+                "evidenceSource": "تست دستی فرم‌ها و ابزارهای ارتباطی وب‌سایت",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "candidate_technical_seo_compliance",
+                "label": "تطبیق فنی سئو و اعتبار زیرساخت وب‌سایت",
+                "definition": "سنجش سلامت فنی، داشتن نقشه سایت و HTTPS",
+                "weight": 0.5,
+                "reason": "نمایش استانداردهای فنی خود آژانس به عنوان نمونه‌کار",
+                "evidenceSource": "تحلیل گزارش‌های ابزارهای سئو توسط اپراتور",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "product_service",
+        "label": "محصول/خدمت",
+        "weight": 0.25,
+        "definition": "ارزیابی تنوع، شفافیت و ارزش پیشنهادی خدمات آژانس خلاق.",
+        "dependentVariables": [
+          {
+            "id": "service_diversity",
+            "label": "تنوع و جامعیت خدمات",
+            "weight": 0.3333,
+            "independentVariables": [
+              {
+                "id": "service_scope",
+                "label": "پوشش زنجیره خدمات دیجیتال",
+                "weight": 1,
+                "evidenceSource": "فهرست خدمات ارائه شده در سایت",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "value_transparency",
+            "label": "شفافیت ارزش و قیمت‌گذاری",
+            "weight": 0.3333,
+            "independentVariables": [
+              {
+                "id": "pricing_clarity",
+                "label": "وضوح مدل درآمدی و پکیج‌ها",
+                "weight": 1,
+                "evidenceSource": "صفحات خدمات و مدل‌های قیمتی",
+                "scoring": {
+                  "type": "range",
+                  "min": 0,
+                  "max": 3,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "supplemental_product_service",
+            "label": "شفافیت ارزش و قیمت‌گذاری",
+            "weight": 0.3334,
+            "reason": "افزوده‌شده پس از بررسی اپراتور",
+            "independentVariables": [
+              {
+                "id": "candidate_service_pricing_transparency",
+                "label": "شفافیت قیمت‌گذاری و وضوح پکیج‌های خدماتی",
+                "definition": "سنجش اعلام شفاف تعرفه و جزئیات پکیج‌ها",
+                "weight": 1,
+                "reason": "کاهش ابهام مشتری در فرایند خرید خدمات",
+                "evidenceSource": "ارزیابی دستی صفحات خدمات و قیمت‌گذاری",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "industry_specific",
+        "label": "عوامل اثرگذار ویژه صنعت",
+        "weight": 0.25,
+        "definition": "سنجش اعتبار تخصصی از طریق کیس‌استدی‌های مستند و مشتریان صنعتی.",
+        "industryFactorCase": {
+          "customerDecisionRole": "نقش حیاتی اعتماد و نمونه‌کارهای واقعی در تصمیم‌گیری کارفرمایان.",
+          "boundaryDefinition": "تمرکز بر نتایج تجاری مستند، بدون هم‌پوشانی با ابزارها یا کانال‌ها.",
+          "industrySignals": [
+            {
+              "observation": "تکیه بادکوبه و پیلبان بر ارائه کیس‌استدی عددی و مشتریان بزرگ.",
+              "source": "تحلیل وب‌سایت و رزومه آژانس‌های رقیب در صنعت.",
+              "implication": "لزوم ارائه مستندات شفاف از نتایج کمپین‌ها برای جلب کارفرما."
+            }
+          ],
+          "customerQuestions": [
+            "آیا این آژانس سابقه موفق ثبت‌شده در صنعت ما دارد؟"
+          ],
+          "excludedCandidates": [],
+          "overlapCheck": [
+            "عامل بر نتایج تجاری مستند تمرکز دارد و با ابزارها متفاوت است."
+          ],
+          "dataGaps": [
+            "کمبود آمار دقیق از نرخ بازگشت سرمایه کمپین‌های قبلی."
+          ]
+        },
+        "dependentVariables": [
+          {
+            "id": "supplemental_industry_specific",
+            "label": "سوابق مستند و کیس‌استدی",
+            "weight": 1,
+            "reason": "افزوده‌شده پس از بررسی اپراتور",
+            "independentVariables": [
+              {
+                "id": "candidate_campaign_roi_case_studies",
+                "label": "ارائه مطالعات موردی و نتایج عددی کمپین‌ها",
+                "definition": "سنجش وجود گزارش‌های عددی مستند از اثربخشی کمپین‌ها",
+                "weight": 0.5,
+                "reason": "تأیید صحت آمار و نتایج ارائه شده آژانس",
+                "evidenceSource": "بررسی دستی مطالعات موردی وب‌سایت",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              },
+              {
+                "id": "candidate_brand_portfolio_credibility",
+                "label": "ارزیابی اعتبار مشتریان و برندهای طرف قرارداد",
+                "definition": "سنجش حضور برندهای شناخته‌شده در سبد مشتریان آژانس",
+                "weight": 0.5,
+                "reason": "اثبات اعتبار صنعتی و توانایی مدیریت پروژه‌های بزرگ",
+                "evidenceSource": "بررسی دستی بخش مشتریان در وب‌سایت آژانس",
+                "scoring": {
+                  "type": "binary",
+                  "min": 0,
+                  "max": 1,
+                  "normalization": "min-max",
+                  "rubricLevels": []
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "factorCandidatePool": [
+      {
+        "id": "campaign_roi_case_studies",
+        "label": "ارائه مطالعات موردی و نتایج عددی کمپین‌ها",
+        "customerDecisionImpact": "افزایش اطمینان کارفرما از بازگشت سرمایه کمپین‌های تبلیغاتی",
+        "customerSignal": "تقاضای کارفرمایان برای دیدن نمونه‌کارهای موفق و عددی",
+        "evidence": [
+          "ارائه مطالعات موردی مستند در سایت آژانس بادکوبه"
+        ],
+        "suggestedFactorId": "industry_specific",
+        "suggestedDependentLabel": "سوابق مستند و کیس‌استدی",
+        "classificationReason": "ارزیابی نتایج واقعی کمپین‌ها نیازمند بررسی اپراتور است",
+        "overlapRisk": "احتمال هم‌پوشانی جزئی با معرفی عمومی خدمات آژانس",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "عوامل اثرگذار ویژه صنعت ← سوابق مستند و کیس‌استدی ← ارائه مطالعات موردی و نتایج عددی کمپین‌ها",
+        "status": "included",
+        "selectedFactorId": "industry_specific",
+        "proposedCriterion": {
+          "definition": "سنجش وجود گزارش‌های عددی مستند از اثربخشی کمپین‌ها",
+          "reason": "تأیید صحت آمار و نتایج ارائه شده آژانس",
+          "evidenceSource": "بررسی دستی مطالعات موردی وب‌سایت",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      },
+      {
+        "id": "creative_script_visual_quality",
+        "label": "کیفیت سناریونویسی و خلاقیت بصری محتوای ویدیویی",
+        "customerDecisionImpact": "جذب سریع مخاطب و ترغیب به تعامل بیشتر",
+        "customerSignal": "استقبال بالا از ویدیوهای خلاقانه آژانس پیلبان",
+        "evidence": [
+          "نرخ تعامل ۱۵.۸۸ درصدی پیلبان در اینستاگرام"
+        ],
+        "suggestedFactorId": "social",
+        "suggestedDependentLabel": "کیفیت محتوا",
+        "classificationReason": "سنجش میزان خلاقیت سناریو نیازمند تحلیل کیفی انسانی است",
+        "overlapRisk": "هم‌پوشانی با معیار کلی کیفیت بصری محتوا",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "سوشال ← کیفیت محتوا ← کیفیت سناریونویسی و خلاقیت بصری محتوای ویدیویی",
+        "status": "included",
+        "selectedFactorId": "social",
+        "proposedCriterion": {
+          "definition": "ارزیابی جذابیت سناریو و کیفیت ساخت ویدیوها",
+          "reason": "سنجش توانمندی تیم تولید محتوای آژانس",
+          "evidenceSource": "پایش کیفی پست‌های اینستاگرام توسط اپراتور",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      },
+      {
+        "id": "service_pricing_transparency",
+        "label": "شفافیت قیمت‌گذاری و وضوح پکیج‌های خدماتی",
+        "customerDecisionImpact": "تصمیم‌گیری سریع‌تر مشتری به دلیل آگاهی از هزینه‌ها",
+        "customerSignal": "ارائه جدول قیمت شفاف توسط میویتا و HDM",
+        "evidence": [
+          "قیمت‌گذاری شفاف پکیج‌ها در سایت میویتا مدیا"
+        ],
+        "suggestedFactorId": "product_service",
+        "suggestedDependentLabel": "شفافیت ارزش و قیمت‌گذاری",
+        "classificationReason": "بررسی دقت و وضوح پکیج‌ها نیازمند تطبیق انسانی است",
+        "overlapRisk": "هم‌پوشانی با تعریف وضوح مدل درآمدی پکیج‌ها",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "محصول/خدمت ← شفافیت ارزش و قیمت‌گذاری ← شفافیت قیمت‌گذاری و وضوح پکیج‌های خدماتی",
+        "status": "included",
+        "selectedFactorId": "product_service",
+        "proposedCriterion": {
+          "definition": "سنجش اعلام شفاف تعرفه و جزئیات پکیج‌ها",
+          "reason": "کاهش ابهام مشتری در فرایند خرید خدمات",
+          "evidenceSource": "ارزیابی دستی صفحات خدمات و قیمت‌گذاری",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      },
+      {
+        "id": "website_ux_lead_tools",
+        "label": "سهولت رزرو مشاوره و ابزارهای دریافت سرنخ",
+        "customerDecisionImpact": "افزایش نرخ تبدیل بازدیدکننده سایت به مشتری احتمالی",
+        "customerSignal": "فقدان چت زنده و رزرو در اکثر رقبا",
+        "evidence": [
+          "عدم وجود ابزار رزرو آنلاین در سایت بادکوبه"
+        ],
+        "suggestedFactorId": "website",
+        "suggestedDependentLabel": "تبدیل و تجربه کاربر",
+        "classificationReason": "تست کارکرد صحیح فرم‌ها نیازمند بررسی توسط اپراتور است",
+        "overlapRisk": "هم‌پوشانی با شاخص ابزارهای دریافت سرنخ",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "وب‌سایت ← تبدیل و تجربه کاربر ← سهولت رزرو مشاوره و ابزارهای دریافت سرنخ",
+        "status": "included",
+        "selectedFactorId": "website",
+        "proposedCriterion": {
+          "definition": "ارزیابی وجود و عملکرد ابزارهای ارتباط مستقیم",
+          "reason": "ارتقای تجربه کاربر در درخواست مشاوره آنلاین",
+          "evidenceSource": "تست دستی فرم‌ها و ابزارهای ارتباطی وب‌سایت",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      },
+      {
+        "id": "brand_portfolio_credibility",
+        "label": "ارزیابی اعتبار مشتریان و برندهای طرف قرارداد",
+        "customerDecisionImpact": "ایجاد اعتماد اولیه از طریق نمایش مشتریان بزرگ",
+        "customerSignal": "نمایش همکاری بادکوبه با بانک‌ها و برندهای مطرح",
+        "evidence": [
+          "ارائه فهرست مشتریان بزرگ در سایت بادکوبه"
+        ],
+        "suggestedFactorId": "industry_specific",
+        "suggestedDependentLabel": "سوابق مستند و کیس‌استدی",
+        "classificationReason": "تأیید اصالت لوگوها و مشتریان نیازمند استعلام انسانی است",
+        "overlapRisk": "احتمال هم‌پوشانی با شهرت و اعتبار عمومی آژانس",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "عوامل اثرگذار ویژه صنعت ← سوابق مستند و کیس‌استدی ← ارزیابی اعتبار مشتریان و برندهای طرف قرارداد",
+        "status": "included",
+        "selectedFactorId": "industry_specific",
+        "proposedCriterion": {
+          "definition": "سنجش حضور برندهای شناخته‌شده در سبد مشتریان آژانس",
+          "reason": "اثبات اعتبار صنعتی و توانایی مدیریت پروژه‌های بزرگ",
+          "evidenceSource": "بررسی دستی بخش مشتریان در وب‌سایت آژانس",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      },
+      {
+        "id": "technical_seo_compliance",
+        "label": "تطبیق فنی سئو و اعتبار زیرساخت وب‌سایت",
+        "customerDecisionImpact": "اطمینان کارفرما از تخصص فنی آژانس در پروژه",
+        "customerSignal": "وجود خطاهای سئوی فنی در اکثر سایت‌های رقبا",
+        "evidence": [
+          "ضعف فنی سئوی بادکوبه و پیلبان در آنالیز"
+        ],
+        "suggestedFactorId": "website",
+        "suggestedDependentLabel": "عملکرد سئو و رتبه‌بندی",
+        "classificationReason": "تحلیل خطاهای کدنویسی سایت نیازمند بررسی کارشناس سئو است",
+        "overlapRisk": "هم‌پوشانی با شاخص‌های سئوی فنی و داخلی",
+        "recommendation": "include",
+        "alreadyIncluded": false,
+        "existingPath": "وب‌سایت ← تبدیل و تجربه کاربر ← تطبیق فنی سئو و اعتبار زیرساخت وب‌سایت",
+        "status": "included",
+        "selectedFactorId": "website",
+        "proposedCriterion": {
+          "definition": "سنجش سلامت فنی، داشتن نقشه سایت و HTTPS",
+          "reason": "نمایش استانداردهای فنی خود آژانس به عنوان نمونه‌کار",
+          "evidenceSource": "تحلیل گزارش‌های ابزارهای سئو توسط اپراتور",
+          "scoring": {
+            "type": "binary",
+            "min": 0,
+            "max": 1,
+            "normalization": "min-max",
+            "rubricLevels": []
+          }
+        }
+      }
+    ],
+    "approvedAt": "2026-09-01T14:03:16.207Z",
+    "operatorEdited": true
+  }
+}

@@ -9,7 +9,8 @@
     "dev:fullstack": "pnpm dev",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite build && wrangler pages dev dist --port 4173"
+    "preview": "vite build && wrangler pages dev dist --port 4173",
+    "deploy:production": "node scripts/deploy-production.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.29.0",
@@ -23,6 +24,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "fake-indexeddb": "^6.2.8",
     "oxlint": "^1.75.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.0"

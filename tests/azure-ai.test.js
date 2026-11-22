@@ -102,7 +102,12 @@ test('incomplete Responses output is never accepted as completed analysis', asyn
 test('missing secret or shared storage fails closed without contacting Azure', async t => {
   const env = environment(t);
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('must not call'); });
-  assert.equal((await worker.fetch(req(), { ...env, AZURE_OPENAI_API_KEY: '' })).status, 503);
+  const missing = await worker.fetch(req(), { ...env, AZURE_OPENAI_API_KEY: '' });
+  assert.equal(missing.status, 503);
+  const body = await missing.json();
+  assert.deepEqual(body.missingSettings, ['AZURE_OPENAI_API_KEY']);
+  assert.equal(body.code, 'AI_CONFIGURATION_MISSING');
+  assert.equal(body.retryable, false);
   assert.equal((await worker.fetch(req(), { ...env, DB: null })).status, 503);
 });
 

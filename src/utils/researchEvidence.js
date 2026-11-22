@@ -1,3 +1,4 @@
+import { fixedDigitalCriterion, VISUAL_REVIEW_NOTICE } from './socialCriteria.js';
 import { recentPosts } from './researchPolicy.js';
 const text = (value, size = 1100) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, size);
 export function businessEvidence(business = {}) {
@@ -14,6 +15,17 @@ export function businessEvidence(business = {}) {
   for (const page of pages.slice(0, 6)) add('website', page.url || business.website, `${page.title || ''} ${page.text || ''}`);
   if (!pages.length && business.websiteData?.text) add('website', business.website, business.websiteData.text);
   for (const [channel, payload] of Object.entries(business.platformData || {})) for (const item of (payload.items || []).slice(0, 5)) add(channel, item.url || item.postUrl || payload.sourceUrl, item.text || item.description || item.title);
+  // The crawler already performs an HTML audit. Keep its measurements available
+  // to scoring instead of sending page text and incorrectly treating them as absent.
+  const audit = business.websiteData;
+  if (audit?.seo && Number.isFinite(audit.seo.overall)) {
+    const checks = audit.seo.checks || {};
+    add('website', audit.url || business.website,
+      'بررسی خودکار HTML وب‌سایت؛ امتیازها و بررسی‌های فنی در metrics ثبت شده‌اند. وجود واژه رزرو یا تماس، آزمون موفق فرم یا رزرو واقعی نیست. این بررسی رتبه واقعی گوگل، سرعت بارگذاری یا نتیجه خدمات را اندازه نمی‌گیرد.',
+      { auditType: 'html_checks', seo: audit.seo, httpStatus: audit.status ?? checks.status ?? null,
+        bookingKeywordFound: Boolean(audit.hasBooking), contactKeywordFound: Boolean(audit.hasContact),
+        mobileViewportFound: Boolean(audit.mobileMeta), interactionTested: false });
+  }
   return entries;
 }
 export function validateEvidenceIds(ids, evidence) {
@@ -23,14 +35,13 @@ export function validateEvidenceIds(ids, evidence) {
 }
 export function validateIndicatorEvidence(model, evidence) {
   for (const factor of model.factors || []) for (const dependent of factor.dependentVariables || []) for (const criterion of dependent.independentVariables || []) {
-    try { validateEvidenceIds(criterion.evidenceIds, evidence); }
+    try { if (!fixedDigitalCriterion(criterion)) validateEvidenceIds(criterion.evidenceIds, evidence); }
     catch {
       const sourceHint = factor.id === 'social' && !evidence.some(item => item.channel === 'instagram')
         ? ' هیچ شاهد Instagram در داده‌های جمع‌آوری‌شده وجود ندارد؛ پروفایل معتبر اضافه کنید یا دامنه مدل را بازبینی کنید.' : '';
       throw new Error(`ارجاع شاهد شاخص «${criterion.label || criterion.id}» (${criterion.id}) ناقص یا خارج از داده‌های ارسالی است.${sourceHint}`);
     }
     if (!String(criterion.definition || '').trim() || !String(criterion.reason || '').trim()) throw new Error(`تعریف و دلیل شاخص ${criterion.id} ناقص است.`);
-    if (/visual|storytelling|layout|بصری|چیدمان|داستان.?گویی/i.test(`${criterion.id} ${criterion.label}`)) throw new Error('معیار تصویری یا ویدئویی با داده متنی قابل تأیید نیست.');
     const levels = criterion.scoring?.rubricLevels;
     const min = criterion.scoring?.min ?? 0; const max = criterion.scoring?.max;
     if (!Array.isArray(levels) || levels.length < 2 || new Set(levels.map(level => level.score)).size !== levels.length || levels.some(level => typeof level.score !== 'number' || level.score < min || level.score > max || !String(level.description || '').trim())) throw new Error(`سطوح امتیاز شاخص ${criterion.id} باید تعریف شوند.`);
@@ -39,7 +50,7 @@ export function validateIndicatorEvidence(model, evidence) {
 }
 export function sanitizeProfileAnalysis(generated, business) {
   const result = structuredClone(generated);
-  const unavailable = 'ارزیابی نشده؛ شواهد تصویری یا ویدئویی دریافت نشده است.';
+  const unavailable = VISUAL_REVIEW_NOTICE;
   result.overallScore = null;
   result.instagramAnalytics = { ...(result.instagramAnalytics || {}), ...business.instagramSummary, followers: business.instagramData?.followersCount ?? null, totalPosts: business.instagramData?.postsCount ?? null };
   result.instagramAnalytics.contentAnalysis = { ...(result.instagramAnalytics.contentAnalysis || {}), visualQuality: unavailable, creativity: unavailable, storytelling: unavailable, highlights: unavailable, layout: unavailable };

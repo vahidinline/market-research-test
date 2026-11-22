@@ -1,3 +1,8 @@
+import { reportPositioningMaps, groupPositioningPoints } from '../utils/positioningMaps.js';
+import { formatScore100 } from '../utils/scoreDisplay.js';
+import { completeCpmEstimates } from '../utils/cpmEstimates.js';
+import { FIXED_SOCIAL_CRITERIA, FIXED_WEBSITE_CRITERIA, isBaseDigitalCriterion, VISUAL_REVIEW_NOTICE } from '../utils/socialCriteria.js';
+import { simplifyLabels } from '../utils/plainLanguage.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
@@ -19,7 +24,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { buildCpmPositioningMaps } from '../utils/cpm.js';
 import { generatePresentationPlan } from '../utils/ai.js';
 import { downloadInteroperableReport } from '../utils/projects.js';
 import './cpm.css';
@@ -76,14 +80,14 @@ const FACTORS = {
   ],
 };
 const LABELS = {
-  visualQuality: 'کیفیت بصری',
-  creativity: 'خلاقیت',
-  scriptTopic: 'سناریو و موضوع',
-  captions: 'کپشن',
-  storytelling: 'داستان‌گویی',
-  bio: 'بیو',
-  highlights: 'هایلایت',
-  layout: 'چیدمان',
+  visualQuality: 'کیفیت عکس و ویدئو',
+  creativity: 'خلاقیت بصری',
+  scriptTopic: 'مفید بودن موضوع محتوا',
+  captions: 'وضوح متن پست‌ها',
+  storytelling: 'روایت ویدئو',
+  bio: 'وضوح معرفی صفحه',
+  highlights: 'نظم و کاربرد هایلایت‌ها',
+  layout: 'هماهنگی ظاهر صفحه',
   engagementRate: 'نرخ تعامل',
   ux: 'تجربه کاربری',
   deviceCompatibility: 'سازگاری موبایل',
@@ -330,15 +334,15 @@ function SeoReport({ comp }) {
       <div className="seo-summary">
         <div>
           <span>کلی</span>
-          <strong>{seo.overall}/100</strong>
+          <strong>{formatScore100(seo.overall)}</strong>
         </div>
         <div>
           <span>On-page</span>
-          <strong>{seo.onPage}/100</strong>
+          <strong>{formatScore100(seo.onPage)}</strong>
         </div>
         <div>
           <span>Technical</span>
-          <strong>{seo.technical}/100</strong>
+          <strong>{formatScore100(seo.technical)}</strong>
         </div>
         <div>
           <span>Off-page</span>
@@ -358,16 +362,21 @@ function SeoReport({ comp }) {
         ].map(([key, label]) => (
           <span key={key}>
             {label}:{' '}
-            {checks[key] === true || (key === 'h1' && checks[key] === 1)
-              ? '✓'
-              : '—'}
+            {checks[key] == null ? 'بررسی نامشخص'
+              : checks[key] === true || (key === 'h1' && checks[key] === 1) || (['title', 'description'].includes(key) && Boolean(checks[key]))
+                ? '✓' : 'رعایت نشده'}
           </span>
         ))}
       </div>
     </Panel>
   );
 }
-function Competitor({ comp, index }) {
+function Competitor({ comp, index, estimatesEnabled = false, estimateNarratives = {} }) {
+  const visualAdvice = key => {
+    const criterion = key === 'layout' || key === 'highlights' ? 'channel_structure' : key === 'visualQuality' ? 'visual_quality' : 'candidate_creative_script_visual_quality';
+    const entry = Object.entries(estimateNarratives).find(([id]) => id.startsWith(`${comp.name}|social|`) && id.endsWith(`|${criterion}`));
+    return `≈ ۰٫۵۰ از ۱ · برآورد اولیه${entry ? ` — پیشنهاد: ${entry[1]}` : ''}`;
+  };
   const ig = comp.instagramAnalytics || {};
   const web = comp.websiteAnalytics || {};
   const verifiedFirst = ig.firstPostStatus === 'verified' ? ig.firstPost : null;
@@ -448,7 +457,7 @@ function Competitor({ comp, index }) {
           kicker="CONTENT AUDIT · SAMPLE"
           title="تحلیل محتوای Instagram">
           <div className="rd-analysis">
-            {Object.entries(ig.contentAnalysis || {}).map(([key, value]) => (
+            {['visualQuality', 'creativity', 'scriptTopic', 'captions', 'storytelling', 'bio', 'highlights', 'layout'].map(key => [key, ['visualQuality', 'creativity', 'storytelling', 'highlights', 'layout'].includes(key) ? (estimatesEnabled ? visualAdvice(key) : VISUAL_REVIEW_NOTICE) : ig.contentAnalysis?.[key] || 'داده کافی برای بررسی این معیار ثبت نشده است.']).map(([key, value]) => (
               <div key={key}>
                 <b>{LABELS[key] || key}</b>
                 <p>{value}</p>
@@ -523,9 +532,11 @@ function Comparison({ data }) {
     ...arr(data.competitorAnalysis),
   ];
   const factors = data.cpmModel?.factors || [];
-  const rows = arr(data.cpmMatrix?.rows);
+  const estimatesEnabled = data.cpmEstimation?.enabled === true;
+  const rows = arr((estimatesEnabled ? completeCpmEstimates(data.cpmModel, data.cpmMatrix, data.cpmEstimation?.narratives) : data.cpmMatrix)?.rows);
   return (
     <div className="rd-grid">
+      {estimatesEnabled && <p className="rd-span-2 rd-cpm-note">مقایسه امتیازها شامل برآورد اولیه برای معیارهای بررسی‌نشده است؛ روش و جزئیات در بخش CPM آمده است.</p>}
       <Panel kicker="BENCHMARK" title="مقایسه نقاط قوت">
         <div className="rd-compare">
           {items.map((c) => (
@@ -611,11 +622,11 @@ function Comparison({ data }) {
                       </td>
                       <td>
                         {gap == null
-                          ? 'داده ناکافی'
+                          ? 'ارزیابی نشده'
                           : gap < -0.1
-                            ? 'نیازمند اقدام'
+                            ? (estimatesEnabled ? 'برآورد پایین‌تر از رقبا' : 'نیازمند اقدام')
                             : gap > 0.1
-                              ? 'مزیت رقابتی'
+                              ? (estimatesEnabled ? 'برآورد بالاتر از رقبا' : 'مزیت رقابتی')
                               : 'نزدیک به رقبا'}
                       </td>
                     </tr>
@@ -708,7 +719,8 @@ function LegacyCpm({ data }) {
 }
 function DynamicCpm({ data }) {
   const model = data.cpmModel;
-  const rows = arr(data.cpmMatrix?.rows);
+  const estimatesEnabled = data.cpmEstimation?.enabled === true;
+  const rows = arr((estimatesEnabled ? completeCpmEstimates(model, data.cpmMatrix, data.cpmEstimation?.narratives) : data.cpmMatrix)?.rows);
   return (
     <>
       <Panel kicker="APPROVED METHODOLOGY" title="مدل کارشناسی تأییدشده">
@@ -741,11 +753,13 @@ function DynamicCpm({ data }) {
       </Panel>
       <Panel
         kicker="PROJECT-SPECIFIC CPM · LOCKED"
-        title="جدول امتیازات نرمال‌شده و وزنی">
-        <p className="rd-cpm-note">
-          محاسبات با دقت کامل انجام شده‌اند؛ نمایش امتیازها در بازه صفر تا یک
-          است.
-        </p>
+        title={estimatesEnabled ? "جدول امتیازها با تکمیل موارد خالی از طریق برآورد" : "جدول امتیازها با درنظرگرفتن اهمیت هر معیار"}>
+        {estimatesEnabled && <p className="rd-cpm-note">≈ یعنی امتیاز برآوردی؛ مبنا میانه امتیاز برندهای دارای داده در همان معیار است. در نبود نمونه مرجع، مقدار میانی ۰٫۵۰ به کار رفته است. امتیاز کل شامل این برآوردهاست.</p>}
+        {!estimatesEnabled && <p className="rd-cpm-note">
+          امتیازها بین صفر و یک‌اند و فقط از معیارهای ارزیابی‌شده محاسبه می‌شوند.
+          «—» یعنی ارزیابی نشده؛ وزن موارد نامشخص در میان موارد ارزیابی‌شده بازتوزیع می‌شود.
+          امتیاز برندهایی با پوشش متفاوت، مبنای رتبه‌بندی قطعی نیست.
+        </p>}
         <div className="rd-table">
           <table>
             <thead>
@@ -770,13 +784,16 @@ function DynamicCpm({ data }) {
                   </td>
                   {model.factors.map((f) => (
                     <td key={f.id}>
-                      {row.factorScores?.[f.id]?.score == null
+                      {row.factorScores?.[f.id]?.estimated && '≈ '}{row.factorScores?.[f.id]?.score == null
                         ? '—'
                         : row.factorScores[f.id].score.toFixed(2)}
+                      {f.id === 'website' && row.factorScores[f.id]?.coverage != null && (
+                        <small className="rd-cpm-weight">پوشش ارزیابی {Math.round(row.factorScores[f.id].coverage * 100)}٪</small>
+                      )}
                     </td>
                   ))}
                   <td>
-                    <b>{row.total == null ? '—' : row.total.toFixed(2)}</b>
+                    <b>{row.estimated && '≈ '}{row.total == null ? '—' : row.total.toFixed(2)}</b>
                   </td>
                 </tr>
               ))}
@@ -796,7 +813,7 @@ function DynamicCpm({ data }) {
                   {factor.label}{' '}
                   <small>
                     وزن {Math.round(Number(factor.weight) * 100)}٪ ·{' '}
-                    {row.factorScores?.[factor.id]?.score == null
+                    {row.factorScores?.[factor.id]?.estimated && '≈ '}{row.factorScores?.[factor.id]?.score == null
                       ? '—'
                       : row.factorScores[factor.id].score.toFixed(2)}
                   </small>
@@ -816,7 +833,7 @@ function DynamicCpm({ data }) {
                           </small>
                         </b>
                         <strong>
-                          {dependentResult?.score == null
+                          {dependentResult?.estimated && '≈ '}{dependentResult?.score == null
                             ? '—'
                             : dependentResult.score.toFixed(2)}
                         </strong>
@@ -827,15 +844,15 @@ function DynamicCpm({ data }) {
                         return (
                           <div className="rd-cpm-criterion" key={criterion.id}>
                             <UnitScore
-                              label={`${criterion.label} · ${Math.round(Number(criterion.weight) * 100)}٪`}
+                              label={`${result?.estimated ? "≈ " : ""}${criterion.label} · ${Math.round(Number(criterion.weight) * 100)}٪`}
                               value={result?.normalizedScore}
                             />
                             <small>
-                              {result?.rawScore == null
-                                ? 'داده ناکافی'
+                              {result?.estimated ? `برآورد اولیه: ${Number(result.rawScore.toFixed(2))} از ${criterion.scoring.max}` : result?.rawScore == null
+                                ? 'ارزیابی نشده'
                                 : `${result.rawScore} از ${criterion.scoring.max}`}
                             </small>
-                            {result?.evidence && <p>{result.evidence}</p>}
+                            {result?.evidence && <p>{result.estimated && <b>پیشنهاد: </b>}{result.evidence}</p>}
                             {arr(result?.evidenceIds).length > 0 && <small>شناسه شواهد در فهرست منابع: {result.evidenceIds.join('، ')} · {row.name}</small>}
                           </div>
                         );
@@ -882,18 +899,33 @@ function Cpm({ data }) {
     <>
       <FactorOverviews data={data} />
       <DynamicCpm data={data} />
+      <Panel title="شاخص‌های پایه و تکمیلی سوشال" info="شاخص‌های پایه ثابت‌اند. افزوده‌های گزارش مرجع در مرحله تأیید قابل تغییرند. نبود تصویر یا ویدئو به معنی کیفیت پایین نیست.">
+        <div className="rd-analysis">{FIXED_SOCIAL_CRITERIA.map(item => <div key={item.id}><b>{item.label}</b><small>{isBaseDigitalCriterion(item) ? ' — شاخص پایه' : ' — افزوده گزارش مرجع'}</small><p>{item.definition}</p>{item.requires === 'visual' && <p>{data.cpmEstimation?.enabled ? 'در جدول تکمیل‌شده، برای این معیار برآورد اولیه نمایش داده می‌شود.' : VISUAL_REVIEW_NOTICE}</p>}</div>)}</div>
+        {data.cpmModel.digitalCriteriaVersion !== 2 && <p>این گزارش با مدل قبلی امتیازدهی شده است. شاخص‌های ثابت اینجا نمایش داده می‌شوند؛ امتیازها و وزن‌های تأییدشده گزارش تغییر نکرده‌اند.</p>}
+      </Panel>
+      <Panel title="شاخص‌های وب‌سایت مطابق نمونه مرجع">
+        <div className="rd-analysis">{FIXED_WEBSITE_CRITERIA.map(item => <div key={item.id}><b>{item.label}</b><small>{isBaseDigitalCriterion(item) ? ' — شاخص پایه' : ' — افزوده گزارش مرجع'}</small><p>{item.definition || item.label}</p></div>)}</div>
+      </Panel>
     </>
   ) : (
     <LegacyCpm data={data} />
   );
 }
+function PositioningMarker({ cx, cy, payload }) {
+  const count = payload?.members?.length || 1;
+  const color = payload?.isTarget ? '#f2b35f' : '#58c6bd';
+  const radius = count > 1 ? 12 : 7;
+  return <g role="img" aria-label={(payload?.members || []).map(point => point.name).join('، ')}>
+    <circle cx={cx} cy={cy} r={radius} fill={color} stroke="#173139" strokeWidth={2} />
+    {count > 1 && <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="#102a30" fontSize={12} fontWeight={700}>{count}</text>}
+  </g>;
+}
+
 function Maps({ data }) {
   const targetName = arr(data.cpmMatrix?.rows).find(
     (row) => row.isTarget,
   )?.name;
-  const maps = data.cpmModel
-    ? buildCpmPositioningMaps(data.cpmModel, data.cpmMatrix)
-    : arr(data.positioningMaps);
+  const maps = reportPositioningMaps(data);
   return (
     <div className="rd-maps">
       {maps.map((map, i) => {
@@ -901,16 +933,20 @@ function Maps({ data }) {
           ...point,
           isTarget: Boolean(point.isTarget || point.name === targetName),
         }));
-        const targetPoints = points.filter((point) => point.isTarget);
-        const competitorPoints = points.filter((point) => !point.isTarget);
+        const groupedPoints = groupPositioningPoints(points, map.source?.startsWith('cpm_factor_') ? 2 : 0);
+        const targetPoints = groupedPoints.filter((point) => point.isTarget);
+        const competitorPoints = groupedPoints.filter((point) => !point.isTarget);
         const domain = map.domain || [0, 10];
         const midpoint = map.midpoint ?? 5;
-        const isCpmMap = map.source === 'cpm_factor_scores';
+        const isCpmMap = map.source?.startsWith('cpm_factor_');
+        const estimatedMap = map.source === 'cpm_factor_estimates';
         return (
           <Panel
             key={map.title || i}
             kicker={isCpmMap ? 'CPM POSITIONING MAP' : 'POSITIONING MAP'}
             title={map.title || `نقشه ${i + 1}`}>
+            <p>{points.length} برند · {points.filter(point => !point.isTarget).length} رقیب{estimatedMap ? ' · مطابق جدول CPM، شامل برآوردهای ≈' : ''}</p>
+            <p>عدد داخل نشان، تعداد برندهای هم‌امتیاز در دقت نمایش جدول است؛ نام همه آن‌ها در راهنمای نشان و جدول زیر آمده است.</p>
             <div className="rd-map-legend">
               <span>
                 <i className="target" />
@@ -952,7 +988,8 @@ function Maps({ data }) {
                   content={({ active, payload }) =>
                     active && payload?.[0] ? (
                       <div className="rd-map-tooltip">
-                        <b>{payload[0].payload.name}</b>
+                        <b>{payload[0].payload.members?.length > 1 ? `${payload[0].payload.members.length} برند هم‌امتیاز` : payload[0].payload.name}</b>
+                        {payload[0].payload.members?.map(member => <div key={member.name}>{member.name}{member.isTarget ? ' · برند هدف' : ''}{member.estimated ? ' ≈' : ''} · {member.x.toFixed(isCpmMap ? 2 : 0)} / {member.y.toFixed(isCpmMap ? 2 : 0)}</div>)}
                         <span>
                           {payload[0].payload.isTarget ? 'برند هدف' : 'رقیب'}
                         </span>
@@ -974,19 +1011,19 @@ function Maps({ data }) {
                   name="رقبا"
                   data={competitorPoints}
                   fill="#58c6bd"
-                  shape="circle"
+                  shape={PositioningMarker}
                 />
                 <Scatter
                   name="برند هدف"
                   data={targetPoints}
                   fill="#f2b35f"
-                  shape="diamond"
+                  shape={PositioningMarker}
                 />
               </ScatterChart>
             </ResponsiveContainer>
             <p>
               {map.xAxis} × {map.yAxis}
-              {isCpmMap ? ' · استخراج مستقیم از CPM تأییدشده' : ''}
+              {isCpmMap ? estimatedMap ? ' · مطابق جدول CPM تکمیل‌شده با برآورد' : ' · استخراج مستقیم از CPM تأییدشده' : ''}
             </p>
             {points.length > 0 && (
               <div className="rd-map-table rd-table">
@@ -1005,7 +1042,7 @@ function Maps({ data }) {
                         key={`${point.name || 'brand'}-${index}`}
                         className={point.isTarget ? 'is-target' : ''}>
                         <td>
-                          <b>{point.name || '—'}</b>
+                          <b>{point.name || '—'}{point.estimated ? ' ≈' : ''}</b>
                         </td>
                         <td>{Number(point.x).toFixed(isCpmMap ? 2 : 0)}</td>
                         <td>{Number(point.y).toFixed(isCpmMap ? 2 : 0)}</td>
@@ -1233,7 +1270,7 @@ function Sources({ data }) {
 }
 
 export default function ResearchDashboard({
-  data,
+  data: originalData,
   target,
   isMock,
   onReset,
@@ -1242,6 +1279,7 @@ export default function ResearchDashboard({
   onSaveAnalysis,
   readOnly = false,
 }) {
+  const data = useMemo(() => simplifyLabels(originalData), [originalData]);
   const { t } = useLanguage();
   const localizedTabs = TABS.map(([id]) => [id, t.dashboard.tabs[id]]);
   const [tab, setTab] = useState('industry');
@@ -1321,7 +1359,7 @@ export default function ResearchDashboard({
           </div>
           {competitor ? (
             <>
-              <Competitor comp={competitor} index={selected} />
+              <Competitor comp={competitor} index={selected} estimatesEnabled={data.cpmEstimation?.enabled === true} estimateNarratives={data.cpmEstimation?.narratives} />
               <SeoReport comp={competitor} />
             </>
           ) : (
@@ -1537,7 +1575,7 @@ export default function ResearchDashboard({
         ))}
       </nav>
       <main className="rd-main">
-        {data.researchMethodology && <Panel kicker="RESEARCH SCOPE" title="دامنه و کیفیت شواهد"><p>دامنه: {data.researchMethodology.scope?.join('، ')} · {data.researchMethodology.sampleSize} کسب‌وکار بررسی‌شده</p><p>{data.researchMethodology.sampleLimitations}</p><p>نتایج دربارهٔ حضور و ادعاهای منتشرشده در وب و اینستاگرام است؛ سهم بازار یا کیفیت واقعی ارائه خدمات برآورد نشده است.</p>{arr(data.cpmMatrix?.rows).map(row => <p key={row.name}>{row.name}: پوشش شواهد {Math.round((row.coverage || 0) * 100)}٪ {row.comparable === false ? '— شواهد ناکافی برای رتبه‌بندی قابل اتکا' : ''}</p>)}{data.cpmSensitivity && <details><summary>حساسیت رتبه‌بندی به تغییر وزن‌ها</summary><p>تغییر وزن هر فاکتور به اندازه ۱۰ واحد درصد و نرمال‌سازی مجدد؛ فقط برندهای دارای شواهد کافی مقایسه می‌شوند.</p>{data.cpmSensitivity.scenarios.map((scenario, index) => <p key={index}>{scenario.factorId} ({scenario.adjustment > 0 ? '+' : ''}{Math.round(scenario.adjustment * 100)}٪): {scenario.ranking.map(item => item.name).join(' ← ') || 'داده کافی نیست'}</p>)}</details>}</Panel>}
+        {(printingAll || tab === 'industry') && data.researchMethodology && <Panel kicker="RESEARCH SCOPE" title="دامنه و کیفیت شواهد"><p>دامنه: {data.researchMethodology.scope?.join('، ')} · {data.researchMethodology.sampleSize} کسب‌وکار بررسی‌شده</p><p>{data.researchMethodology.sampleLimitations}</p><p>نتایج دربارهٔ حضور و ادعاهای منتشرشده در وب و اینستاگرام است؛ سهم بازار یا کیفیت واقعی ارائه خدمات برآورد نشده است.</p>{arr(data.cpmMatrix?.rows).map(row => <p key={row.name}>{row.name}: پوشش شواهد {Math.round((row.coverage || 0) * 100)}٪ {row.comparable === false ? '— شواهد ناکافی برای رتبه‌بندی قابل اتکا' : ''}</p>)}{data.cpmSensitivity && <details><summary>حساسیت رتبه‌بندی به تغییر وزن‌ها</summary><p>تغییر وزن هر فاکتور به اندازه ۱۰ واحد درصد و تنظیم دوباره مجموع وزن‌ها؛ فقط برندهای دارای شواهد کافی مقایسه می‌شوند.</p>{data.cpmSensitivity.scenarios.map((scenario, index) => <p key={index}>{scenario.factorId} ({scenario.adjustment > 0 ? '+' : ''}{Math.round(scenario.adjustment * 100)}٪): {scenario.ranking.map(item => item.name).join(' ← ') || 'داده کافی نیست'}</p>)}</details>}</Panel>}
 
         {printingAll
           ? localizedTabs.map(([id, label]) => (

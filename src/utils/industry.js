@@ -172,7 +172,7 @@ async function runCachedStage(cacheKey, result, name, producer, progress) {
 
 function industryRunner({ cacheKey, result, provider, aiConfig, onProgress }) {
   result.pipeline.analysisChunks ||= {};
-  return createStageRunner({ model: aiConfig.model, checkpoint: { chunks: result.pipeline.analysisChunks, save: () => persistPipeline(cacheKey, result) }, execute: async (id, prompt) => { promptBudget(prompt, aiConfig); onProgress(id); return analyzeWithAI(provider, aiConfig, prompt); } });
+  return createStageRunner({ config: aiConfig, model: aiConfig.model, checkpoint: { chunks: result.pipeline.analysisChunks, save: () => persistPipeline(cacheKey, result) }, execute: async (id, prompt) => { promptBudget(prompt, aiConfig); onProgress(id); return analyzeWithAI(provider, aiConfig, prompt); } });
 }
 
 async function runSourceEvidenceStage({ cacheKey, result, onProgress, forceRefresh = false }) {

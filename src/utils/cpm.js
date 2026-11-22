@@ -1,3 +1,5 @@
+import { measuredWebsiteScore } from './websiteScoring.js';
+import { fixedDigitalCriterion, isFixedDigitalGroup, needsVisualReview, VISUAL_REVIEW_NOTICE } from './socialCriteria.js';
 import { validateIndicatorEvidence } from './researchEvidence.js';
 const round = (value) => Number(Number(value).toFixed(4));
 const uniqueIds = (items) => new Set(items.map((item) => item.id)).size === items.length;
@@ -36,13 +38,13 @@ export function validateCpmModel(model, { status = model?.status || 'proposed', 
   let criterionCount = 0;
   for (const factor of model.factors) {
     if (!factor.id || !factor.label || !Array.isArray(factor.dependentVariables) || !factor.dependentVariables.length) throw new Error(`ساختار فاکتور ${factor.label || factor.id || 'نامشخص'} ناقص است.`);
-    if (factor.dependentVariables.length > 4) throw new Error(`فاکتور ${factor.label} بیش از ۴ متغیر وابسته دارد.`);
+    if (factor.dependentVariables.filter(group => !isFixedDigitalGroup(group)).length > 4) throw new Error(`فاکتور ${factor.label} بیش از ۴ متغیر وابسته دارد.`);
     if (!uniqueIds(factor.dependentVariables)) throw new Error(`شناسه متغیرهای وابسته ${factor.label} یکتا نیست.`);
     validateWeights(factor.dependentVariables, `متغیرهای وابسته فاکتور «${factor.label}»`, requireWeights);
     for (const dependent of factor.dependentVariables) {
       if (!dependent.id || !dependent.label || !Array.isArray(dependent.independentVariables) || !dependent.independentVariables.length) throw new Error(`متغیر وابسته ${dependent.label || dependent.id || 'نامشخص'} فاقد معیار سنجش است.`);
       if (dependent.independentVariables.length > 5) throw new Error(`متغیر وابسته ${dependent.label} بیش از ۵ معیار سنجش دارد.`);
-      criterionCount += dependent.independentVariables.length;
+      criterionCount += dependent.independentVariables.filter(criterion => !fixedDigitalCriterion(criterion)).length;
       if (!uniqueIds(dependent.independentVariables)) throw new Error(`شناسه معیارهای ${dependent.label} یکتا نیست.`);
       validateWeights(dependent.independentVariables, `متغیرهای مستقل «${dependent.label}»`, requireWeights);
       for (const criterion of dependent.independentVariables) {
@@ -116,15 +118,17 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
       const independentScores = {};
       for (const criterion of dependent.independentVariables) {
         if (factor.id !== 'website' || (identity.hasWebsite !== false && identity.hasWebsiteEvidence !== false)) {
-          if (!(criterion.id in suppliedCriteria)) throw new Error(`معیار ${criterion.label} برای ${identity.name} در خروجی وجود ندارد.`);
+          if (!needsVisualReview(criterion) && !(criterion.id in suppliedCriteria)) throw new Error(`معیار ${criterion.label} برای ${identity.name} در خروجی وجود ندارد.`);
         }
-        const supplied = suppliedCriteria[criterion.id] || {};
+        const measured = factor.id === 'website' && factor.auditScoringVersion === 2 && identity.websiteEvidence
+          ? measuredWebsiteScore(criterion, identity.websiteEvidence) : undefined;
+        const supplied = measured || suppliedCriteria[criterion.id] || {};
         // A missing website is an observed zero, not missing data. Keeping it
         // as null causes the website factor to become null and positioning maps
         // to drop the entire brand from their dataset.
         const websiteUnavailable = factor.id === 'website' && identity.hasWebsite === false && !identity.strictEvidence;
         const websiteNotAudited = factor.id === 'website' && identity.hasWebsiteEvidence === false && (identity.hasWebsite !== false || identity.strictEvidence);
-        const unsupportedVisual = identity.strictEvidence && /visual|storytelling|layout|بصری|چیدمان|داستان.?گویی/i.test(`${criterion.id} ${criterion.label}`);
+        const unsupportedVisual = fixedDigitalCriterion(criterion)?.requires === 'visual' || (identity.strictEvidence && needsVisualReview(criterion));
         const rawScore = unsupportedVisual ? null : websiteUnavailable ? 0 : websiteNotAudited ? null : supplied.rawScore ?? null;
         if (identity.strictEvidence && rawScore != null) {
           if (identity.evidenceChannels && supplied.evidenceIds?.some(id => factor.id === 'website' ? identity.evidenceChannels[id] !== 'website' : factor.id === 'social' ? identity.evidenceChannels[id] === 'website' : false)) throw new Error('شاهد امتیاز متعلق به کانال این فاکتور نیست.');
@@ -132,11 +136,11 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
           if (!String(supplied.evidence || '').trim() || !Array.isArray(supplied.evidenceIds) || !supplied.evidenceIds.length || supplied.evidenceIds.some(id => !identity.evidenceIds?.includes(id))) throw new Error(`امتیاز ${criterion.id} شاهد معتبر همان برند ندارد.`);
         }
         independentScores[criterion.id] = {
-          evidenceIds: supplied.evidenceIds || [],
+          evidenceIds: unsupportedVisual ? [] : supplied.evidenceIds || [],
           rawScore,
           normalizedScore: websiteUnavailable ? 0 : normalizeCpmScore(rawScore, criterion.scoring),
-          evidence: websiteUnavailable ? 'وب‌سایت ندارد؛ امتیاز صفر.' : websiteNotAudited ? 'داده قابل بررسی از وب‌سایت موجود نیست؛ ارزیابی نشده.' : supplied.evidence || '',
-          status: rawScore == null ? 'not_available' : 'scored',
+          evidence: unsupportedVisual ? VISUAL_REVIEW_NOTICE : websiteUnavailable ? 'وب‌سایت ندارد؛ امتیاز صفر.' : websiteNotAudited ? 'داده قابل بررسی از وب‌سایت موجود نیست؛ ارزیابی نشده.' : supplied.evidence || '',
+          status: unsupportedVisual ? 'needs_visual_review' : rawScore == null ? 'not_available' : 'scored',
         };
       }
       const availableCriteria = dependent.independentVariables.filter((criterion) => independentScores[criterion.id].normalizedScore != null);
@@ -148,10 +152,19 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
     }
     const availableDependents = factor.dependentVariables.filter((dependent) => dependentScores[dependent.id].score != null);
     const availableDependentWeight = availableDependents.reduce((sum, dependent) => sum + Number(dependent.weight), 0);
-    const factorScore = availableDependentWeight
+    let factorScore = availableDependentWeight
       ? availableDependents.reduce((sum, dependent) => sum + dependentScores[dependent.id].score * Number(dependent.weight), 0) / availableDependentWeight
       : null;
-    factorScores[factor.id] = { score: factorScore == null ? null : round(factorScore), dependentScores };
+    const criterionWeights = factor.dependentVariables.flatMap(dependent => dependent.independentVariables.map(criterion => ({
+      weight: Number(dependent.weight) * Number(criterion.weight),
+      score: dependentScores[dependent.id].independentScores[criterion.id].normalizedScore,
+    })));
+    const factorCoverage = criterionWeights.reduce((sum, item) => sum + (item.score == null ? 0 : item.weight), 0);
+    if (factor.id === 'website' && factor.auditScoringVersion === 2) {
+      factorScore = factorCoverage ? criterionWeights.reduce((sum, item) => sum + (item.score ?? 0) * item.weight, 0) / factorCoverage : null;
+    }
+    factorScores[factor.id] = { score: factorScore == null ? null : round(factorScore), dependentScores,
+      ...(factor.id === 'website' && factor.auditScoringVersion === 2 ? { coverage: round(factorCoverage) } : {}) };
   }
   const availableFactors = model.factors.filter((factor) => factorScores[factor.id].score != null);
   const availableWeight = availableFactors.reduce((sum, factor) => sum + Number(factor.weight || 0), 0);
@@ -184,7 +197,7 @@ export function buildCpmPositioningMaps(model, matrix) {
     const yFactor = factors[yFactorId];
     if (!xFactor || !yFactor) return null;
     const data = matrix.rows.flatMap((row) => {
-      if (row.comparable === false) return [];
+      if (row.comparable === false && matrix.scenario !== true) return [];
       const x = row.factorScores?.[xFactorId]?.score;
       const y = row.factorScores?.[yFactorId]?.score;
       if (x == null || y == null) return [];
@@ -193,6 +206,7 @@ export function buildCpmPositioningMaps(model, matrix) {
         x: round(x),
         y: round(y),
         isTarget: Boolean(row.isTarget),
+        ...(matrix.scenario === true ? { estimated: Boolean(row.factorScores[xFactorId].estimated || row.factorScores[yFactorId].estimated) } : {}),
       }];
     });
     return {
@@ -203,7 +217,7 @@ export function buildCpmPositioningMaps(model, matrix) {
       yFactorId,
       domain: [0, 1],
       midpoint: 0.5,
-      source: 'cpm_factor_scores',
+      source: matrix.scenario === true ? 'cpm_factor_estimates' : 'cpm_factor_scores',
       data,
     };
   }).filter(Boolean);

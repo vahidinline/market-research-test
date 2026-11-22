@@ -322,3 +322,16 @@ This project is currently distributed without a license file. Before publishing 
 ## Disclaimer
 
 AI-generated research is an assistive input, not a substitute for primary research, legal advice, financial advice, or professional market validation. Verify important claims and links before relying on them.
+
+### Production deployment guard
+
+Deploy `market.roxiapp.online` using `pnpm deploy:production`. It checks required
+Cloudflare Pages **encrypted production secrets** before upload, then checks the
+live `/api/ai` configuration endpoint. This GET check does not invoke Azure.
+
+Keep credentials in Pages secrets, never in `wrangler.jsonc` or plain-text
+Pages variables: CLI deployment replaces plain-text variables with the local
+`vars` configuration. Required guarded secrets are `AZURE_OPENAI_API_KEY`,
+`APIFY_API_KEY`, `ROOT_EMAIL`, `ROOT_PASSWORD`, and `SENDPULSE_API_KEY`.
+The public Azure endpoint/deployment and actor selection remain in `vars`.
+Do not report deployment success based only on the static page loading.

@@ -1,7 +1,5 @@
 import { withDeadline } from './deadline.js';
-const KEY = 'market_research_projects';
-const local = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
-const write = (items) => localStorage.setItem(KEY, JSON.stringify(items));
+import { listBrowserProjects, saveBrowserProject, deleteBrowserProject } from './projectBrowserStore.js';
 const randomId = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const savedTime = (project) => Date.parse(project?.snapshot?._project?.savedAt || project?.updated_at || '') || 0;
 const newest = (browser, remote) => browser && (!remote || savedTime(browser) > savedTime(remote)) ? browser : remote;
@@ -15,11 +13,32 @@ async function projectRequest(url, init = {}) {
       throw error;
     });
     return { response, data };
-  }, 15000, 'مهلت ارتباط با ذخیره‌سازی سرور تمام شد؛ نسخه مرورگر حفظ شده است.');
+  }, init.method === 'POST' ? 60000 : 15000, 'مهلت ارتباط با ذخیره‌سازی سرور تمام شد.');
+}
+
+export async function encodeProjectRequest(item) {
+  const serialized = JSON.stringify(item);
+  const headers = { 'content-type': 'application/json' };
+  if (serialized.length > 64000 && globalThis.CompressionStream) {
+    const body = await new Response(new Blob([serialized]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+    return { method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-project-encoding': 'gzip' }, body };
+  }
+  return { method: 'POST', headers, body: serialized };
+}
+async function sendProject(item) {
+  const init = await encodeProjectRequest(item);
+  // Upserts with a stable project id can safely retry a lost acknowledgement.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await projectRequest('/api/projects', init);
+      if (attempt === 0 && [408, 429, 502, 503, 504].includes(result.response.status)) continue;
+      return result;
+    } catch (error) { if (attempt > 0) throw error; }
+  }
 }
 
 export async function listProjects() {
-  const localProjects = local();
+  const localProjects = await listBrowserProjects();
   try {
     const { response: r, data } = await projectRequest('/api/projects', { headers: { accept: 'application/json' }, cache: 'no-store' });
     if (!r.ok) throw new Error();
@@ -29,7 +48,20 @@ export async function listProjects() {
     return [...merged.values()].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   } catch { return localProjects; }
 }
-export async function saveProject(snapshot, target) {
+const saveQueues = new Map();
+export function saveProject(snapshot, target) {
+  // Freeze the checkpoint now; later stages must not mutate an in-flight save.
+  const frozen = structuredClone(snapshot);
+  frozen.id ||= randomId();
+  const frozenTarget = structuredClone(target);
+  const previous = saveQueues.get(frozen.id) || Promise.resolve();
+  const pending = previous.catch(() => {}).then(() => saveProjectNow(frozen, frozenTarget));
+  saveQueues.set(frozen.id, pending);
+  const cleanup = () => { if (saveQueues.get(frozen.id) === pending) saveQueues.delete(frozen.id); };
+  pending.then(cleanup, cleanup);
+  return pending;
+}
+async function saveProjectNow(snapshot, target) {
   const existingProject = snapshot?._project || {};
   const projectTarget = { ...(existingProject.target || {}), ...(target || {}) };
   const ownerEmail = String(projectTarget.ownerEmail || existingProject.ownerEmail || '').trim().toLowerCase();
@@ -49,17 +81,18 @@ export async function saveProject(snapshot, target) {
   const item = { id: snapshot.id || randomId(), name: target?.name || 'پروژه بدون نام', industry: target?.industry || '', snapshot: storedSnapshot, updated_at: new Date().toISOString() };
   // Commit locally before awaiting the network; a tab refresh or disconnect
   // must not replace a successful analysis with an older server draft.
-  let browserSaved = false;
-  try { write([item, ...local().filter(x => x.id !== item.id)]); browserSaved = true; } catch {}
+  let browserSaved = false; let browserError;
+  try { await saveBrowserProject(item); browserSaved = true; } catch (error) { browserError = error; }
   try {
-    const { response: r, data } = await projectRequest('/api/projects', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(item) });
+    const { response: r, data } = await sendProject(item);
     if (!r.ok) {
       const error = data;
       throw new Error(error?.error || `خطای ذخیره‌سازی (${r.status})`);
     }
+    if (data.id !== item.id) throw new Error('پاسخ معتبر تأیید ذخیره از سرور دریافت نشد.');
     return { ...item, persistence: 'remote' };
   } catch (error) {
-    if (!browserSaved) throw new Error(`ذخیره این بخش در مرورگر و سرور ناموفق بود: ${error.message}`);
+    if (!browserSaved) throw new Error(`ذخیره این بخش در مرورگر و سرور ناموفق بود. مرورگر: ${browserError?.message}؛ سرور: ${error.message}`);
     return { ...item, persistence: 'local', persistenceError: error.message || 'ذخیره‌سازی سمت سرور در دسترس نیست.' };
   }
 }
@@ -158,7 +191,7 @@ export async function importProjectTransfer(file) {
     });
     if (!response.ok) throw new Error();
   } catch {
-    write([imported, ...local().filter((item) => item.id !== imported.id)]);
+    await saveBrowserProject(imported);
   }
   return imported;
 }
@@ -166,7 +199,7 @@ export async function loadProject(id) {
   return (await loadProjectRecord(id))?.snapshot || null;
 }
 export async function loadProjectRecord(id) {
-  const browser = local().find((x) => x.id === id);
+  const browser = (await listBrowserProjects()).find((x) => x.id === id);
   try {
     const { response: r, data } = await projectRequest(`/api/projects?id=${encodeURIComponent(id)}`, { headers: { accept: 'application/json' }, cache: 'no-store' });
     if (r.ok) return newest(browser, data);
@@ -190,5 +223,5 @@ export function getOwnerPanelUrl(projectId, token) {
 }
 export async function deleteProject(id) {
   try { await projectRequest(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
-  write(local().filter(x => x.id !== id));
+  await deleteBrowserProject(id);
 }
