@@ -58,3 +58,27 @@ test('legacy website breakdowns are zeroed for businesses without sites', () => 
   assert.equal(repaired.cpmMatrix.rows[0].website, 0);
   assert.deepEqual(repaired.cpmMatrix.rows[0].websiteBreakdown, { ux: 0, seo: 0 });
 });
+
+test('reviewed missing website stays zero through estimates and reload, without claiming audit coverage', async () => {
+  const {completeCpmEstimates}=await import('../src/utils/cpmEstimates.js');
+  const websiteModel={...model,factors:[{...model.factors[0],weight:1}]};
+  const review={name:'Brand',status:'not_found',scorePolicy:'zero',reviewedAt:'2026-11-22',sources:['https://www.instagram.com/brand/'],note:'No official website found in reviewed sources; zero by scoring policy.'};
+  const report={researchMethodology:{},cpmModel:websiteModel,cpmEvaluations:[{}],websitePresenceReviews:[review],cpmEstimation:{enabled:true}};
+  const identities={target:{name:'Brand',website:''}};
+  const first=enforceReportIntegrity(report,identities);
+  const reloaded=enforceReportIntegrity(first,identities);
+  for(const matrix of [first.cpmMatrix,reloaded.cpmMatrix,completeCpmEstimates(websiteModel,reloaded.cpmMatrix)]) {
+    assert.equal(matrix.rows[0].factorScores.website.score,0);
+    assert.equal(matrix.rows[0].factorScores.website.coverage,0);
+    assert.equal(matrix.rows[0].total,0);
+  }
+});
+
+test('inactive-site decision applies only to the reviewed URL; unreviewed missing sites stay unknown', () => {
+ const websiteModel={...model,factors:[{...model.factors[0],weight:1}]};
+ const review={status:'inactive',website:'https://old.test/',scorePolicy:'zero',reviewedAt:'2026-11-22',sources:['https://old.test/']};
+ const identity={name:'Brand',strictEvidence:true,hasWebsite:true,hasWebsiteEvidence:false,websiteUrl:'https://old.test/',websiteReview:review};
+ assert.equal(calculateCpmRow(websiteModel,{},identity).factorScores.website.score,0);
+ assert.equal(calculateCpmRow(websiteModel,{}, {...identity,websiteUrl:'https://new.test/'}).factorScores.website.score,null);
+ assert.equal(calculateCpmRow(websiteModel,{}, {...identity,hasWebsite:false,websiteReview:undefined}).factorScores.website.score,null);
+});

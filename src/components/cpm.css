@@ -17,3 +17,8 @@
 .rd-cpm-weight { display: block; margin-top: 4px; }
 @media(max-width:800px){.rd-cpm-model-grid{grid-template-columns:1fr}}
 .rd-score-unit { grid-template-columns: 125px 1fr 34px; }
+
+.rd-brand-legend{display:flex;flex-wrap:wrap;gap:12px 20px;margin:16px 0 24px}
+.rd-brand-legend>span,.rd-brand-name{display:inline-flex;align-items:center;gap:8px;font-size:12px}
+.rd-brand-legend svg,.rd-brand-name svg{flex:none}
+@media print{.rd-brand-legend{break-inside:avoid}.rd-maps{--map-marker-bg:#fff}.rd-maps svg{print-color-adjust:exact;-webkit-print-color-adjust:exact}}

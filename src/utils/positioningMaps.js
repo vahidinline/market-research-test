@@ -9,6 +9,26 @@ export function reportPositioningMaps(report) {
   return buildCpmPositioningMaps(report.cpmModel, matrix);
 }
 
+// Move only the drawn symbol; its leader line retains the exact data position.
+export function layoutPositioningMarkers(points, domain, width, height) {
+  const placed = [];
+  const span = domain[1] - domain[0];
+  return points.map(point => {
+    const x = (point.x - domain[0]) / span * width;
+    const y = (domain[1] - point.y) / span * height;
+    let candidate = { x, y };
+    for (let step = 0; step < 2000; step++) {
+      const radius = step === 0 ? 0 : 4 * Math.sqrt(step);
+      const angle = step * 2.399963;
+      candidate = { x: x + radius * Math.cos(angle), y: y + radius * Math.sin(angle) };
+      if (candidate.x < 0 || candidate.x > width || candidate.y < 0 || candidate.y > height) continue;
+      if (placed.every(other => Math.hypot(candidate.x - other.x, candidate.y - other.y) >= 28)) break;
+    }
+    placed.push(candidate);
+    return { ...point, markerDx: candidate.x - x, markerDy: candidate.y - y };
+  });
+}
+
 // Group coordinates as displayed in the table, without jittering real scores.
 // Every member and its full-precision coordinates remain available in tooltips.
 export function groupPositioningPoints(points, decimals = 2) {

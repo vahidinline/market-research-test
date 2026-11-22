@@ -1,4 +1,4 @@
-import { reportPositioningMaps, groupPositioningPoints } from '../utils/positioningMaps.js';
+import { reportPositioningMaps, layoutPositioningMarkers } from '../utils/positioningMaps.js';
 import { formatScore100 } from '../utils/scoreDisplay.js';
 import { completeCpmEstimates } from '../utils/cpmEstimates.js';
 import { FIXED_SOCIAL_CRITERIA, FIXED_WEBSITE_CRITERIA, isBaseDigitalCriterion, VISUAL_REVIEW_NOTICE } from '../utils/socialCriteria.js';
@@ -911,31 +911,42 @@ function Cpm({ data }) {
     <LegacyCpm data={data} />
   );
 }
+const BRAND_COLORS = ['#f2b35f', '#58c6bd', '#6ca8ff', '#ed7e91', '#b397ed', '#a4ce66', '#e38351', '#70cedf', '#df91d0', '#d3ca70', '#a5b7c7', '#a77c69'];
+function BrandSymbol({ index = 0, isTarget: _isTarget, ...props }) {
+  const color = BRAND_COLORS[index] || `hsl(${(index * 137.508) % 360} 65% 65%)`;
+  return <svg width={18} height={18} viewBox="0 0 24 24" aria-hidden="true" {...props}>
+    <circle cx={12} cy={12} r={9} fill={color} stroke="var(--map-marker-bg, #142127)" strokeWidth={2} />
+  </svg>;
+}
 function PositioningMarker({ cx, cy, payload }) {
-  const count = payload?.members?.length || 1;
-  const color = payload?.isTarget ? '#f2b35f' : '#58c6bd';
-  const radius = count > 1 ? 12 : 7;
-  return <g role="img" aria-label={(payload?.members || []).map(point => point.name).join('، ')}>
-    <circle cx={cx} cy={cy} r={radius} fill={color} stroke="#173139" strokeWidth={2} />
-    {count > 1 && <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="#102a30" fontSize={12} fontWeight={700}>{count}</text>}
+  const dx = payload?.markerDx || 0, dy = payload?.markerDy || 0;
+  return <g role="img" aria-label={payload?.name}>
+    <title>{payload?.name}</title>
+    {(dx !== 0 || dy !== 0) && <><line x1={cx} y1={cy} x2={cx + dx} y2={cy + dy} stroke="#84969b" strokeWidth={1}/><circle cx={cx} cy={cy} r={2} fill="#84969b"/></>}
+    <svg x={cx + dx - 10} y={cy + dy - 10} width={20} height={20} viewBox="0 0 24 24">
+      <BrandSymbol index={payload?.symbolIndex} isTarget={payload?.isTarget} width={24} height={24} />
+    </svg>
   </g>;
 }
 
 function Maps({ data }) {
+  const [chartWidths, setChartWidths] = useState({});
   const targetName = arr(data.cpmMatrix?.rows).find(
     (row) => row.isTarget,
   )?.name;
   const maps = reportPositioningMaps(data);
+  const brandNames = [...new Set([...arr(data.cpmMatrix?.rows).map(row => row.name), ...maps.flatMap(map => arr(map.data).map(point => point.name))])];
   return (
     <div className="rd-maps">
       {maps.map((map, i) => {
         const points = arr(map.data).map((point) => ({
           ...point,
+          symbolIndex: brandNames.indexOf(point.name),
           isTarget: Boolean(point.isTarget || point.name === targetName),
         }));
-        const groupedPoints = groupPositioningPoints(points, map.source?.startsWith('cpm_factor_') ? 2 : 0);
-        const targetPoints = groupedPoints.filter((point) => point.isTarget);
-        const competitorPoints = groupedPoints.filter((point) => !point.isTarget);
+        const displayPoints = layoutPositioningMarkers(points, map.domain || [0, 10], Math.max(100, (chartWidths[i] || 500) - 100), 254);
+        const targetPoints = displayPoints.filter((point) => point.isTarget);
+        const competitorPoints = displayPoints.filter((point) => !point.isTarget);
         const domain = map.domain || [0, 10];
         const midpoint = map.midpoint ?? 5;
         const isCpmMap = map.source?.startsWith('cpm_factor_');
@@ -946,20 +957,13 @@ function Maps({ data }) {
             kicker={isCpmMap ? 'CPM POSITIONING MAP' : 'POSITIONING MAP'}
             title={map.title || `نقشه ${i + 1}`}>
             <p>{points.length} برند · {points.filter(point => !point.isTarget).length} رقیب{estimatedMap ? ' · مطابق جدول CPM، شامل برآوردهای ≈' : ''}</p>
-            <p>عدد داخل نشان، تعداد برندهای هم‌امتیاز در دقت نمایش جدول است؛ نام همه آن‌ها در راهنمای نشان و جدول زیر آمده است.</p>
-            <div className="rd-map-legend">
-              <span>
-                <i className="target" />
-                برند هدف
-              </span>
-              <span>
-                <i className="competitor" />
-                رقبا
-              </span>
+            <p>هر نماد متعلق به یک برند است. برای جلوگیری از هم‌پوشانی، بعضی نمادها با خط به محل دقیق امتیاز وصل شده‌اند. ≈ یعنی برآورد.</p>
+            <div className="rd-brand-legend">
+              {points.map(point => <span key={point.name}><BrandSymbol index={point.symbolIndex} isTarget={point.isTarget}/>{point.name}{point.isTarget ? ' · هدف' : ''}{point.estimated ? ' ≈' : ''}</span>)}
             </div>
-            <ResponsiveContainer width="100%" height={310}>
+            <ResponsiveContainer width="100%" height={340} onResize={(width) => setChartWidths(previous => previous[i] === width ? previous : { ...previous, [i]: width })}>
               <ScatterChart
-                margin={{ top: 14, right: 20, bottom: 20, left: 0 }}>
+                margin={{ top: 28, right: 30, bottom: 28, left: 10 }}>
                 <CartesianGrid stroke="#2b3c43" strokeDasharray="3 3" />
                 <XAxis
                   type="number"
@@ -1011,12 +1015,14 @@ function Maps({ data }) {
                   name="رقبا"
                   data={competitorPoints}
                   fill="#58c6bd"
+                  isAnimationActive={false}
                   shape={PositioningMarker}
                 />
                 <Scatter
                   name="برند هدف"
                   data={targetPoints}
                   fill="#f2b35f"
+                  isAnimationActive={false}
                   shape={PositioningMarker}
                 />
               </ScatterChart>
@@ -1042,7 +1048,7 @@ function Maps({ data }) {
                         key={`${point.name || 'brand'}-${index}`}
                         className={point.isTarget ? 'is-target' : ''}>
                         <td>
-                          <b>{point.name || '—'}{point.estimated ? ' ≈' : ''}</b>
+                          <span className="rd-brand-name"><BrandSymbol index={point.symbolIndex} isTarget={point.isTarget}/><b>{point.name || '—'}{point.estimated ? ' ≈' : ''}</b></span>
                         </td>
                         <td>{Number(point.x).toFixed(isCpmMap ? 2 : 0)}</td>
                         <td>{Number(point.y).toFixed(isCpmMap ? 2 : 0)}</td>

@@ -17,3 +17,27 @@ test('overlapping target and rivals remain separately identifiable without movin
  const points=[{name:'target',x:.70001,y:.8,isTarget:true},{name:'rival',x:.70002,y:.8,isTarget:false,estimated:true},{name:'other',x:.9,y:.5,isTarget:false}];
  const groups=groupPositioningPoints(points);assert.equal(groups.length,2);assert.equal(groups[0].members.length,2);assert.equal(groups[0].isTarget,true);assert.equal(groups[0].estimated,true);assert.equal(groups[0].x,points[0].x);assert.deepEqual(groups.flatMap(g=>g.members),points);
 });
+
+test('website score updates rebuild both website maps instead of using saved maps', () => {
+ const data=report();
+ data.positioningMaps=reportPositioningMaps(data);
+ data.cpmMatrix.rows[0].factorScores.website.score=.21;
+ const maps=reportPositioningMaps(data);
+ assert.equal(maps.find(map=>map.yFactorId==='website').data[0].y,.21);
+ assert.equal(maps.find(map=>map.xFactorId==='website').data[0].x,.21);
+ assert.equal(data.positioningMaps[0].data[0].y,.7);
+});
+
+test('each coincident brand gets a separate symbol position while scores remain unchanged', async () => {
+ const {layoutPositioningMarkers}=await import('../src/utils/positioningMaps.js');
+ for(const width of [180,400,800]) {
+ const points=Array.from({length:11},(_,i)=>({name:`brand ${i}`,x:.7,y:.85,symbolIndex:i}));
+ const result=layoutPositioningMarkers(points,[0,1],width,240);
+ assert.equal(result.length,11);
+ for(const [i,p] of result.entries()) {
+ assert.equal(p.x,points[i].x);assert.equal(p.y,points[i].y);assert.equal(p.symbolIndex,i);
+ for(const other of result.slice(0,i)) assert.ok(Math.hypot(p.markerDx-other.markerDx,p.markerDy-other.markerDy)>=28);
+ }
+ assert.deepEqual(result,layoutPositioningMarkers(points,[0,1],width,240));
+ }
+});

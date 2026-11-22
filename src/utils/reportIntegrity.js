@@ -29,6 +29,9 @@ export function enforceReportIntegrity(analysis, profilesData) {
     const bestPost = summary?.bestPost;
     const recorded = result._integrity?.businessSources?.find((item) => sameBusiness(item, business));
     const websiteUrl = String(business.website || '').trim();
+    const presenceReview = result.websitePresenceReviews?.find(review => sameBusiness(review, business));
+    const reviewedUnavailable = presenceReview?.scorePolicy === 'zero' && (
+      (!websiteUrl && presenceReview.status === 'not_found') || (presenceReview.status === 'inactive' && presenceReview.website === websiteUrl));
     const website = websiteUrl ? business.websiteData : null;
     const hasWebsiteEvidence = Boolean(websiteUrl && (website?.text || website?.pagesCrawled > 0 || website?.pages?.some((page) => page.text) || (recorded?.website === websiteUrl && recorded.hasWebsiteEvidence)));
     const websiteStatus = !websiteUrl ? result.researchMethodology ? 'not_audited' : 'absent' : hasWebsiteEvidence ? 'audited' : 'not_audited';
@@ -61,9 +64,9 @@ export function enforceReportIntegrity(analysis, profilesData) {
       },
       websiteAnalytics: {
         ...(hasWebsiteEvidence ? checked.websiteAnalytics || {} : {}),
-        status: websiteStatus,
+        status: reviewedUnavailable ? presenceReview.status : websiteStatus,
         uxScore: hasWebsiteEvidence ? checked.websiteAnalytics?.uxScore ?? null : null,
-        narrative: hasWebsiteEvidence ? competitor.websiteAnalytics?.narrative || '' : websiteUrl ? 'داده کافی برای ارزیابی وب‌سایت موجود نیست.' : result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ نمی‌توان گفت این کسب‌وکار وب‌سایت ندارد.' : 'این کسب‌وکار وب‌سایت ندارد.',
+        narrative: reviewedUnavailable ? presenceReview.note : hasWebsiteEvidence ? competitor.websiteAnalytics?.narrative || '' : websiteUrl ? 'داده کافی برای ارزیابی وب‌سایت موجود نیست.' : result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ نمی‌توان گفت این کسب‌وکار وب‌سایت ندارد.' : 'این کسب‌وکار وب‌سایت ندارد.',
         mobileFriendly: result.researchMethodology ? null : hasWebsiteEvidence ? website ? Boolean(website.mobileMeta) : competitor.websiteAnalytics?.mobileFriendly ?? null : null,
         onlineBooking: hasWebsiteEvidence ? website ? Boolean(website.hasBooking) : competitor.websiteAnalytics?.onlineBooking ?? null : null,
         liveSupport: null,
@@ -104,6 +107,8 @@ export function enforceReportIntegrity(analysis, profilesData) {
       name: business.name,
       isTarget: index === 0,
       strictEvidence: Boolean(result.researchMethodology),
+      websiteReview: result.websitePresenceReviews?.find(review => sameBusiness(review, business)),
+      websiteUrl: String(business.website || '').trim(),
       websiteEvidence: evidenceFor(business),
       evidenceIds: evidenceFor(business).map(item => item.id),
       evidenceChannels: Object.fromEntries(evidenceFor(business).map(item => [item.id, item.channel])),
@@ -118,7 +123,8 @@ export function enforceReportIntegrity(analysis, profilesData) {
       const row = calculated.matrix.rows[index];
       const score = row.factorScores.website?.score;
       const absent = !String(business.website || '').trim();
-      const state = absent ? result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ ارزیابی نشده است.' : 'وب‌سایت ندارد؛ امتیاز صفر.' : score == null ? 'وب‌سایت ثبت شده، اما شواهد کافی برای امتیازدهی موجود نیست.' : `امتیاز وب‌سایت بر اساس داده بررسی‌شده: ${Math.round(score * 100)}/100.`;
+      const review = row.factorScores.website?.websiteReview;
+      const state = review ? review.note : absent ? result.researchMethodology ? 'آدرس وب‌سایت ثبت نشده؛ ارزیابی نشده است.' : 'وب‌سایت ندارد؛ امتیاز صفر.' : score == null ? 'وب‌سایت ثبت شده، اما شواهد کافی برای امتیازدهی موجود نیست.' : `امتیاز وب‌سایت بر اساس داده بررسی‌شده: ${Math.round(score * 100)}/100.`;
       return `${business.name}: ${state}`;
     }).join(' ') };
     result.positioningMaps = reportPositioningMaps(result);

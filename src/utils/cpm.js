@@ -107,6 +107,22 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
   if (Object.keys(suppliedFactors).some((id) => !expectedFactorIds.includes(id))) throw new Error(`معیار اضافه در ارزیابی ${identity.name} وجود دارد.`);
   const factorScores = {};
   for (const factor of model.factors) {
+    const review = identity.websiteReview;
+    const reviewedUnavailable = (review?.status === 'not_found' && identity.hasWebsite === false)
+      || (review?.status === 'inactive' && review.website === identity.websiteUrl);
+    if (factor.id === 'website' && reviewedUnavailable && review?.scorePolicy === 'zero' && review?.reviewedAt && review?.sources?.length) {
+      factorScores[factor.id] = {
+        score: 0, coverage: 0, websiteReview: structuredClone(review),
+        dependentScores: Object.fromEntries(factor.dependentVariables.map(dependent => [dependent.id, {
+          score: 0,
+          independentScores: Object.fromEntries(dependent.independentVariables.map(criterion => [criterion.id, {
+            rawScore: 0, normalizedScore: 0, status: 'policy_zero', evidenceIds: [],
+            evidence: review.note || 'در بررسی منابع، وب‌سایت رسمی شناسایی نشد؛ طبق تصمیم امتیازدهی، صفر منظور شده است.',
+          }])),
+        }])),
+      };
+      continue;
+    }
     const suppliedDependents = suppliedFactors[factor.id]?.dependentScores || {};
     const expectedDependentIds = factor.dependentVariables.map((dependent) => dependent.id);
     if (Object.keys(suppliedDependents).some((id) => !expectedDependentIds.includes(id))) throw new Error(`متغیر وابسته اضافه در فاکتور ${factor.label} وجود دارد.`);
@@ -171,7 +187,10 @@ export function calculateCpmRow(model, rawEvaluation, identity) {
   const total = availableWeight
     ? availableFactors.reduce((sum, factor) => sum + factorScores[factor.id].score * Number(factor.weight), 0) / availableWeight
     : null;
-  const coverage = model.factors.reduce((sum, factor) => sum + Number(factor.weight) * factor.dependentVariables.reduce((inner, dependent) => inner + Number(dependent.weight) * dependent.independentVariables.reduce((covered, criterion) => covered + (factorScores[factor.id].dependentScores[dependent.id].independentScores[criterion.id].rawScore == null ? 0 : Number(criterion.weight)), 0), 0), 0);
+  const coverage = model.factors.reduce((sum, factor) => sum + Number(factor.weight) * factor.dependentVariables.reduce((inner, dependent) => inner + Number(dependent.weight) * dependent.independentVariables.reduce((covered, criterion) => {
+    const score = factorScores[factor.id].dependentScores[dependent.id].independentScores[criterion.id];
+    return covered + (score.rawScore == null || score.status === 'policy_zero' ? 0 : Number(criterion.weight));
+  }, 0), 0), 0);
   return { coverage: round(coverage), comparable: coverage >= 0.8, name: identity.name, isTarget: Boolean(identity.isTarget), factorScores, total: total == null ? null : round(total) };
 }
 
