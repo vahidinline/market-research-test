@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { LockKeyhole, LogIn } from 'lucide-react';
 import { useLanguage } from '../i18n.jsx';
-export default function AuthGate({ children }) {
+export default function AuthGate({ children, onAuthenticated }) {
   const { language, setLanguage, t } = useLanguage();
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState('');
   useEffect(() => { fetch('/api/auth/me', { credentials: 'include' }).then(r => r.json()).then(x => setAuthenticated(Boolean(x.user))).catch(() => {}).finally(() => setChecking(false)); }, []);
+  useEffect(() => { onAuthenticated?.(authenticated); }, [authenticated, onAuthenticated]);
   if (authenticated) return children;
   const english = language === 'en';
   const submit = async (event) => { event.preventDefault(); setError(''); try { const r = await fetch('/api/auth/login', { method: 'POST', credentials: 'include', headers: {'content-type':'application/json'}, body: JSON.stringify({ email, password }) }); const data = await r.json(); if (!r.ok) throw new Error(data.error || t.auth.invalid); setAuthenticated(true); } catch (e) { setError(e.message); } };

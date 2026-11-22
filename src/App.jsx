@@ -1,3 +1,4 @@
+import { readReportRoute, reportUrl } from './utils/reportRoute.js';
 import { restoreSocialCriteria, needsDigitalCriteriaReview } from './utils/socialCriteria.js';
 import { researchScope } from './utils/researchPolicy.js';
 import { shouldResumeDraft, normalizeDraft } from './utils/draftResume.js';
@@ -32,6 +33,24 @@ const STATE = { FORM: 'form', LOADING: 'loading', CPM_APPROVAL: 'cpm_approval', 
 
 export default function App() {
   const { language, dir } = useLanguage();
+  const [route, setRoute] = useState(() => readReportRoute(window.location.href));
+  const [authReady, setAuthReady] = useState(false);
+  const [routeLoad, setRouteLoad] = useState({ loading: false, error: '' });
+  const [routeRetry, setRouteRetry] = useState(0);
+  const routeLoader = useRef(null);
+  const navigateReport = (projectId, tab = 'industry', replace = false) => {
+    const url = reportUrl(window.location.href, projectId, tab);
+    if (url !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', url);
+    }
+    setRoute(readReportRoute(window.location.href));
+  };
+  useEffect(() => {
+    const restore = () => setRoute(readReportRoute(window.location.href));
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, []);
+
   const [appState, setAppState] = useState(STATE.FORM);
   const [loadingStep, setLoadingStep] = useState(0);
   const [loadingError, setLoadingError] = useState(null);
@@ -289,6 +308,7 @@ export default function App() {
       setLoadedDraft(null);
       if (savedProject.persistence === 'remote') setDraftNotice('');
       setCurrentProjectId(savedProject.id);
+      navigateReport(savedProject.id);
       setPendingResearch(null);
       setIsMock(false);
       setAppState(STATE.REPORT);
@@ -305,6 +325,8 @@ export default function App() {
   };
 
   const handleReset = () => {
+    navigateReport(null);
+    setRouteLoad({ loading: false, error: '' });
     activeDraft.current = null;
     setAppState(STATE.FORM);
     setLoadedDraft(null);
@@ -381,8 +403,9 @@ export default function App() {
     setReportData(updated);
   };
 
-  const handleLoadProject = async (id) => {
+  const handleLoadProject = async (id, isActive = () => true) => {
     const snapshot = await loadProject(id);
+    if (!isActive()) return;
     if (!snapshot) throw new Error('پیش‌نویس بارگذاری نشد؛ اتصال را بررسی کنید و دوباره ادامه دهید.');
     if (snapshot) {
       if (snapshot._draft) {
@@ -401,6 +424,7 @@ export default function App() {
       const signature = [...new Set(handles.map((handle) => handle.toLowerCase()))].sort().join('|');
       const cacheKey = `instagram-v2:${signature}`;
       const { payload: cached } = handles.length ? await loadResearchCacheFromKeys([cacheKey, signature]) : { payload: null };
+      if (!isActive()) return;
       let repaired = enforceReportIntegrity(snapshot, { target: savedTarget, competitors: savedCompetitors });
       if (cached?.profiles && cached?.posts) {
         const profileMap = Object.fromEntries(cached.profiles.map((profile) => [normalizeInstagramHandle(profile.username).toLowerCase(), profile]));
@@ -418,6 +442,24 @@ export default function App() {
       setReportAiRuntime({ provider: '9router', config: { model: globalAi.model, fallbackModels: globalAi.fallbackModels } });
     }
   };
+
+  routeLoader.current = { load: handleLoadProject, currentProjectId, appState, reset: handleReset };
+  useEffect(() => {
+    if (!authReady || route.owner) return;
+    let active = true;
+    const current = routeLoader.current;
+    if (!route.projectId) {
+      setRouteLoad({ loading: false, error: '' });
+      if (current.currentProjectId) current.reset();
+      return;
+    }
+    if (current.currentProjectId === route.projectId && current.appState === STATE.REPORT) return;
+    setRouteLoad({ loading: true, error: '' });
+    current.load(route.projectId, () => active)
+      .then(() => { if (active) setRouteLoad({ loading: false, error: '' }); })
+      .catch(error => { if (active) setRouteLoad({ loading: false, error: error.message || 'بارگذاری گزارش ناموفق بود.' }); });
+    return () => { active = false; };
+  }, [authReady, route.projectId, route.owner, routeRetry]);
 
   const globalAiRuntime = reportAiRuntime || (() => {
     const settings = loadAiSettings();
@@ -440,9 +482,9 @@ export default function App() {
       await persistDraft();
     }} onCancel={handleReset} />
   ) : appState === STATE.REPORT && reportData ? (
-    <ResearchDashboard onSaveAnalysis={handleSaveAnalysis} data={reportData} target={dashboardTarget} isMock={isMock} onReset={handleReset} presentationAi={globalAiRuntime} onRefreshTopics={handleRefreshTopics} />
+    <ResearchDashboard activeTab={currentProjectId ? route.tab : undefined} onTabChange={(tab) => currentProjectId && navigateReport(currentProjectId, tab)} onSaveAnalysis={handleSaveAnalysis} data={reportData} target={dashboardTarget} isMock={isMock} onReset={handleReset} presentationAi={globalAiRuntime} onRefreshTopics={handleRefreshTopics} />
   ) : (
-    <ConfigForm key={loadedDraft?.id || "new"} initialDraft={loadedDraft?._draft.form} onSaveDraft={handleSaveDraft} onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={handleLoadProject} language={language} />
+    <ConfigForm key={loadedDraft?.id || "new"} initialDraft={loadedDraft?._draft.form} onSaveDraft={handleSaveDraft} onSubmit={handleSubmit} loading={appState === STATE.LOADING} onLoadProject={async (id) => { if (route.projectId === id) setRouteRetry(value => value + 1); else navigateReport(id); }} language={language} />
   );
   if (ownerPanel.loading) return <div dir={dir} className="min-h-screen grid place-items-center text-slate-200">در حال بارگذاری پنل کارفرما…</div>;
   if (ownerPanel.error) return <div dir={dir} className="min-h-screen grid place-items-center text-red-300">{ownerPanel.error}</div>;
@@ -450,7 +492,7 @@ export default function App() {
     const snapshot = ownerPanel.project.snapshot || {};
     const target = snapshot._project?.target || snapshot.target || { name: ownerPanel.project.name || 'گزارش' };
     const checked = enforceReportIntegrity(snapshot, { target, competitors: (snapshot.competitorAnalysis || []).map((item) => ({ name: item.name, instagramHandle: item.instagramHandle, website: snapshot._integrity?.businessSources?.find((source) => source.name === item.name)?.website ?? item.website })) });
-    return <div dir={dir}><ResearchDashboard data={checked} target={target} isMock={false} onReset={() => window.location.assign(window.location.pathname)} presentationAi={null} onRefreshTopics={null} readOnly /></div>;
+    return <div dir={dir}><ResearchDashboard activeTab={route.tab} onTabChange={(tab) => navigateReport(ownerPanel.project.id, tab)} data={checked} target={target} isMock={false} onReset={() => window.location.assign(window.location.pathname)} presentationAi={null} onRefreshTopics={null} readOnly /></div>;
   }
-  return <div dir={dir}><AuthGate>{draftNotice && <div role="status" style={{ background: "#172033", color: "white", padding: 12 }}>{draftNotice}</div>}{app}<AiLogs /></AuthGate></div>;
+  return <div dir={dir}><AuthGate onAuthenticated={setAuthReady}>{draftNotice && <div role="status" style={{ background: "#172033", color: "white", padding: 12 }}>{draftNotice}</div>}{routeLoad.loading || (route.projectId && !route.owner && appState === STATE.FORM && !loadedDraft && !routeLoad.error) ? <div role="status" className="auth-page">در حال بارگذاری گزارش…</div> : routeLoad.error ? <div className="auth-page"><div className="auth-card"><p role="alert">{routeLoad.error}</p><button onClick={() => setRouteRetry(value => value + 1)}>تلاش دوباره</button><button onClick={handleReset}>بازگشت به پروژه‌ها</button></div></div> : app}<AiLogs /></AuthGate></div>;
 }

@@ -9,7 +9,7 @@ export function reportPositioningMaps(report) {
   return buildCpmPositioningMaps(report.cpmModel, matrix);
 }
 
-// Move only the drawn symbol; its leader line retains the exact data position.
+// Move only the drawn symbol; tooltips and tables retain the exact scores.
 export function layoutPositioningMarkers(points, domain, width, height) {
   const placed = [];
   const span = domain[1] - domain[0];

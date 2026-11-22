@@ -36,10 +36,10 @@ const TABS = [
   ['competitors', 'پرونده رقبا'],
   ['comparison', 'تحلیل تطبیقی'],
   ['swot', 'SWOT'],
-  ['topics', 'موضوعات پرتکرار'],
   ['cpm', 'CPM مفصل'],
   ['maps', 'نقشه جایگاه'],
   ['strategy', 'پیشنهادات'],
+  ['topics', 'موضوعات پرتکرار'],
   ['sources', 'منابع'],
 ];
 const FACTORS = {
@@ -922,7 +922,6 @@ function PositioningMarker({ cx, cy, payload }) {
   const dx = payload?.markerDx || 0, dy = payload?.markerDy || 0;
   return <g role="img" aria-label={payload?.name}>
     <title>{payload?.name}</title>
-    {(dx !== 0 || dy !== 0) && <><line x1={cx} y1={cy} x2={cx + dx} y2={cy + dy} stroke="#84969b" strokeWidth={1}/><circle cx={cx} cy={cy} r={2} fill="#84969b"/></>}
     <svg x={cx + dx - 10} y={cy + dy - 10} width={20} height={20} viewBox="0 0 24 24">
       <BrandSymbol index={payload?.symbolIndex} isTarget={payload?.isTarget} width={24} height={24} />
     </svg>
@@ -957,7 +956,7 @@ function Maps({ data }) {
             kicker={isCpmMap ? 'CPM POSITIONING MAP' : 'POSITIONING MAP'}
             title={map.title || `نقشه ${i + 1}`}>
             <p>{points.length} برند · {points.filter(point => !point.isTarget).length} رقیب{estimatedMap ? ' · مطابق جدول CPM، شامل برآوردهای ≈' : ''}</p>
-            <p>هر نماد متعلق به یک برند است. برای جلوگیری از هم‌پوشانی، بعضی نمادها با خط به محل دقیق امتیاز وصل شده‌اند. ≈ یعنی برآورد.</p>
+            <p>هر دایره متعلق به یک برند است. برای خوانایی، دایره‌های نزدیک کمی از هم فاصله گرفته‌اند؛ امتیاز دقیق در جدول زیر آمده است. ≈ یعنی برآورد.</p>
             <div className="rd-brand-legend">
               {points.map(point => <span key={point.name}><BrandSymbol index={point.symbolIndex} isTarget={point.isTarget}/>{point.name}{point.isTarget ? ' · هدف' : ''}{point.estimated ? ' ≈' : ''}</span>)}
             </div>
@@ -1284,11 +1283,15 @@ export default function ResearchDashboard({
   onRefreshTopics,
   onSaveAnalysis,
   readOnly = false,
+  activeTab,
+  onTabChange,
 }) {
   const data = useMemo(() => simplifyLabels(originalData), [originalData]);
   const { t } = useLanguage();
   const localizedTabs = TABS.map(([id]) => [id, t.dashboard.tabs[id]]);
-  const [tab, setTab] = useState('industry');
+  const [localTab, setLocalTab] = useState('industry');
+  const tab = activeTab || localTab;
+  const setTab = (id) => { setLocalTab(id); onTabChange?.(id); };
   const [selected, setSelected] = useState(0);
   const [printingAll, setPrintingAll] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);

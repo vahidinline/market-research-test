@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  LoaderCircle,
   Settings,
   Building2,
   AtSign,
@@ -92,6 +93,9 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject, onSaveDra
     saved?.industryIntelligence || saved?.target?.industryIntelligence || null,
   );
   const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState('');
+  const [projectsRetry, setProjectsRetry] = useState(0);
   const [openingProject, setOpeningProject] = useState(null);
   const [projectLoadError, setProjectLoadError] = useState('');
   const openProject = async (id) => {
@@ -168,11 +172,27 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject, onSaveDra
     saveAiSettings({ model: routerModel, fallbackModels: routerFallbackModels });
   }, [routerModel, routerFallbackModels]);
   useEffect(() => {
-    const refresh = () => listProjects().then(setProjects);
+    let active = true;
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      setProjectsLoading(true);
+      setProjectsError('');
+      try {
+        const items = await listProjects();
+        if (active) setProjects(items);
+      } catch {
+        if (active) setProjectsError('بارگذاری پروژه‌ها ناموفق بود. دوباره تلاش کنید.');
+      } finally {
+        inFlight = false;
+        if (active) setProjectsLoading(false);
+      }
+    };
     refresh();
     window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
-  }, []);
+    return () => { active = false; window.removeEventListener('focus', refresh); };
+  }, [projectsRetry]);
   useEffect(() => {
     if (provider !== '9router') return;
     let active = true;
@@ -471,14 +491,16 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject, onSaveDra
 
       {projectLoadError && <div role="alert" className="max-w-3xl mx-auto text-red-300 p-4">{projectLoadError}</div>}
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-6">
-        <section className="projects-panel">
+        <section className="projects-panel" aria-busy={projectsLoading}>
           <div className="projects-panel-head">
             <div>
               <span>RESEARCH ARCHIVE</span>
               <h2>{t.form.archive}</h2>
             </div>
-            <strong>{projects.length}</strong>
+            <strong>{projectsLoading && !projects.length ? '…' : projects.length}</strong>
           </div>
+          {projectsLoading && <div className="projects-loading" role="status" aria-live="polite"><LoaderCircle size={22} aria-hidden="true" /><span>{projects.length ? 'در حال به‌روزرسانی پروژه‌ها…' : 'در حال بارگذاری پروژه‌ها…'}</span></div>}
+          {projectsError && <div className="projects-empty" role="alert">{projectsError} <button type="button" onClick={() => setProjectsRetry(value => value + 1)}>تلاش دوباره</button></div>}
           {projects.length ? (
             <div className="projects-list">
               {projects.map((p) => {
@@ -506,7 +528,7 @@ export default function ConfigForm({ onSubmit, loading, onLoadProject, onSaveDra
               })}
             </div>
           ) : (
-            <div className="projects-empty">
+            !projectsLoading && !projectsError && <div className="projects-empty">
               هنوز گزارشی ذخیره نشده است. اولین گزارش پس از تولید اینجا نمایش
               داده می‌شود.
             </div>
